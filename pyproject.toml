@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vitalwatch"
+version = "0.1.1"
+description = "VitalWatch Hub için Python raporlayıcı — sunucu hataları, yavaş istekler, canlılık"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "CestnyTR" }]
+requires-python = ">=3.9"
+keywords = ["monitoring", "error-tracking", "flask", "wsgi", "vitalwatch"]
+
+# Bağımlılık YOK ve olmayacak: paket izlenen projelere kurulur, her bağımlılık
+# orada bir sürüm çakışması riskidir. Flask entegrasyonu flask'ı yalnızca
+# kullanıldığı anda ve kendi içinde import eder.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/CestnyTR/vitalwatch-python"
+Hub = "https://github.com/CestnyTR/vitalwatch-hub"
+
+[project.scripts]
+vitalwatch-status = "vitalwatch.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
