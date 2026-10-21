@@ -527,7 +527,9 @@ class StarletteTest(_Base):
             first = spy.call_count
             client.get("/maintenance/b")
 
-        self.assertGreater(first, 0)
+        # Starlette 1.x scope["route"]'u kendisi koyuyor; desen oradan okunur ve
+        # önbellek yoluna hiç girilmez. Eski sürümlerde ilk istek derler, ikincisi
+        # önbellekten gelir. İki durumda da ikinci istek yeniden derlememeli.
         self.assertEqual(first, spy.call_count)
         self.assertEqual(["GET /maintenance/{section}"] * 2, [e["route"] for e in self.events()])
 
