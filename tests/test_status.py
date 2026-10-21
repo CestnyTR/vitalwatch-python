@@ -1,4 +1,4 @@
-"""``vitalwatch-status``: sürüm etiketi satırı ve güncelleme denetimi. Ağa çıkılmaz."""
+"""``vitalwatch-status``: sürüm etiketi satırı ve PyPI güncelleme denetimi. Ağa çıkılmaz."""
 
 import io
 import json
@@ -30,12 +30,13 @@ class _Response:
         return False
 
 
-def tags(*names):
-    return _Response([{"name": name, "commit": {"sha": "x"}} for name in names])
+def pypi(version):
+    """PyPI JSON API yanıtının ilgili kısmı."""
+    return _Response({"info": {"name": "vitalwatch", "version": version}, "releases": {}})
 
 
 class StatusTest(unittest.TestCase):
-    def run_cli(self, config=None, urlopen=None, release=(None, None), version="0.1.1"):
+    def run_cli(self, config=None, urlopen=None, release=(None, None), version="0.2.0"):
         config = dict(CONFIG if config is None else config)
         out, err = io.StringIO(), io.StringIO()
         urlopen = urlopen or mock.Mock(side_effect=AssertionError("ağa çıkılmamalı"))
@@ -55,43 +56,41 @@ class StatusTest(unittest.TestCase):
 
     def test_new_version_warning_does_not_change_exit_code(self):
         code, out, _, urlopen = self.run_cli(
-            urlopen=mock.Mock(return_value=tags("v0.1.0", "v0.2.0", "v0.10.1", "v1.0.0-rc1", "0.9.9", "attempt"))
+            urlopen=mock.Mock(return_value=pypi("0.10.1"))
         )
 
         self.assertEqual(0, code)
         self.assertIn("Güncel sürüm", out)
         self.assertIn("0.10.1", out)
-        self.assertIn(
-            'Güncelleme var: pip install -U --force-reinstall '
-            '"vitalwatch @ git+https://github.com/CestnyTR/vitalwatch-python.git@v0.10.1"',
-            out,
-        )
+        self.assertIn("Güncelleme var: pip install -U vitalwatch", out)
+        self.assertNotIn("git+", out)
 
         request = urlopen.call_args[0][0]
-        self.assertTrue(request.full_url.startswith("https://api.github.com/repos/CestnyTR/vitalwatch-python/tags"))
+        self.assertEqual("https://pypi.org/pypi/vitalwatch/json", request.full_url)
         self.assertTrue(request.get_header("User-agent"))
         self.assertEqual(2.0, urlopen.call_args[1]["timeout"])
 
     def test_no_warning_when_up_to_date(self):
         for installed in ("0.2.0", "0.3.0"):
-            code, out, _, _ = self.run_cli(urlopen=mock.Mock(return_value=tags("v0.2.0", "v0.1.9")), version=installed)
+            code, out, _, _ = self.run_cli(urlopen=mock.Mock(return_value=pypi("0.2.0")), version=installed)
 
             self.assertEqual(0, code)
             self.assertIn("0.2.0", out)
             self.assertNotIn("Güncelleme var", out)
 
     def test_prerelease_not_counted(self):
-        _, out, _, _ = self.run_cli(urlopen=mock.Mock(return_value=tags("v0.2.0-beta", "v0.1.1")))
+        for version in ("0.3.0-beta", "0.3.0rc1"):
+            _, out, _, _ = self.run_cli(urlopen=mock.Mock(return_value=pypi(version)))
 
-        self.assertNotIn("Güncelleme var", out)
-        self.assertNotIn("0.2.0", out)
+            self.assertNotIn("Güncelleme var", out)
+            self.assertNotIn("0.3.0", out)
 
     def test_network_error_check_failed(self):
         import urllib.error
 
         for failure in (
             urllib.error.URLError("ağ yok"),
-            urllib.error.HTTPError(cli.TAGS_URL, 403, "rate limit", {}, None),
+            urllib.error.HTTPError(cli.PYPI_URL, 404, "Not Found", {}, None),
             TimeoutError("zaman aşımı"),
         ):
             code, out, _, _ = self.run_cli(urlopen=mock.Mock(side_effect=failure))
@@ -101,7 +100,7 @@ class StatusTest(unittest.TestCase):
             self.assertNotIn("Güncelleme var", out)
 
     def test_broken_response_or_missing_tag_check_failed(self):
-        for response in (_Response({"message": "Not Found"}), _Response([]), _Response(["v1.0.0"])):
+        for response in (_Response({"message": "Not Found"}), _Response([]), _Response(["1.0.0"]), _Response({"info": {}}), _Response({"info": {"version": None}})):
             _, out, _, _ = self.run_cli(urlopen=mock.Mock(return_value=response))
 
             self.assertIn("denetlenemedi", out)
@@ -116,7 +115,7 @@ class StatusTest(unittest.TestCase):
 
         for flag in ("0", "false", "hayir", ""):
             config = dict(CONFIG, VITALWATCH_STATUS_OFFLINE=flag)
-            _, out, _, urlopen = self.run_cli(config=config, urlopen=mock.Mock(return_value=tags("v0.1.1")))
+            _, out, _, urlopen = self.run_cli(config=config, urlopen=mock.Mock(return_value=pypi("0.2.0")))
 
             self.assertIn("Güncel sürüm", out, flag)
             self.assertEqual(1, urlopen.call_count, flag)

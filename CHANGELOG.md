@@ -5,6 +5,39 @@
 > değişkenleri `VITALWATCH_*`, imza başlıkları `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. Aşağıdaki geçmiş kayıtlar yeni adlarla yazılmıştır.
 
+## 0.2.0
+
+### Eklendi
+
+- **Sunucu ajanı: `vitalwatch-agent`.** Uygulamanın dışında kalan arızaları hata
+  olayı olarak hub'ın sunucu ucuna gönderir: nginx/apache/Plesk vhost error log'ları
+  (`web_server`, 502/504 tahmini, `route`), PHP-FPM (`php_fpm`), PostgreSQL,
+  MySQL/MariaDB, MongoDB, Redis (`database`), journald'dan başarısız birim, OOM ve
+  çekirdek hataları (`service_failed`, `oom`, `kernel`), 5 dakikada bir
+  `systemctl --failed`, `docker events` (`container_failed`: hata kodlu çıkış,
+  10 dakikada ≥ 3 `die` = yeniden başlama döngüsü, `unhealthy`, OOM), disk ve inode
+  doluluğu (`disk_full`, bağlama noktası başına saatte bir) ve kullanıcı tanımlı
+  `[log:<ad>]` desenleri (`log_error`). Komutlar: `run`, `check [--test]`, `systemd`.
+  Yalnızca standart kütüphane; sözleşme `vitalwatch-doc` `features/22-sunucu-ajani`.
+- Ajan kişisel veriyi sunucudan çıkmadan atar: IPv4/IPv6 → `[ip]`, nginx `client:`,
+  `referrer`, `host` alanları ve Apache `[client …]` / `referer:` tamamen silinir,
+  query string ve fragment atılır, ardından paketin mevcut maskesi uygulanır.
+  SSH/kimlik doğrulama, erişim ve posta logları hiç okunmaz.
+- Akış kontrolü: aynı mesaj dakikada 20, toplam dakikada 300 olay; gövde 8 KB'ye ve
+  hub'ın istek başına işlediği 8 olaya bölünür; hub erişilemezse 1000 olaya kadar
+  bekletme ve üstel geri çekilmeyle yeniden deneme; 5 dakikada bir canlılık isteği
+  (`runtime: "agent"`). Hub'ın kendi alan adı her zaman yok sayılır.
+- Okuma konumları (inode + ofset) ve journald imleci
+  `/var/lib/vitalwatch-agent/state.json`'da; log döndürme ve kırpılma algılanır,
+  ilk görülen log sonundan okunur, glob'lar dakikada bir yeniden taranır.
+
+### Değişti
+
+- `vitalwatch-status` güncelleme denetimi artık PyPI'dan (`info.version`) okunuyor;
+  ipucu `pip install -U vitalwatch`. README kurulum satırı `pip install vitalwatch`.
+- `pyproject.toml`: lisans SPDX ifadesi (`license = "MIT"`), derleme için
+  `setuptools>=77`. Eski tablo biçimi setuptools'ta kullanımdan kalkma uyarısı veriyordu.
+
 ## 0.1.1
 
 ### Eklendi

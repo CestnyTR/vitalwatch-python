@@ -21,9 +21,8 @@ from .env import env as read_env
 from .release import detect as detect_release
 from .reporter import ENVIRONMENTS, normalize_env
 
-#: Paket PyPI'da değil; sürümler GitHub etiketlerinden okunur.
-TAGS_URL = "https://api.github.com/repos/CestnyTR/vitalwatch-python/tags?per_page=100"
-REPO_URL = "https://github.com/CestnyTR/vitalwatch-python.git"
+#: Yayımlanmış en yeni sürüm PyPI'dan okunur (``info.version``).
+PYPI_URL = "https://pypi.org/pypi/vitalwatch/json"
 UPDATE_TIMEOUT = 2.0
 
 #: Kararlı sürüm: ``1.2.3`` ya da ``v1.2.3``; ön sürüm (``-rc1``) sayılmaz.
@@ -127,7 +126,7 @@ def main(argv=None):
 
 
 def _update_lines(values):
-    """GitHub etiketlerindeki en yeni kararlı sürüm; yeniyse uyarı.
+    """PyPI'daki en yeni kararlı sürüm; yeniyse uyarı.
 
     Uyarıdır, hata değil: çıkış kodu değişmez — güncelleme döngüsündeki
     betikler eski sürümü "bozuk kurulum" saymasın. Ağ yoksa ya da hız
@@ -151,37 +150,36 @@ def _update_lines(values):
         installed = _stable(__version__)
 
         if installed is None or _stable(latest) > installed:
-            print(
-                f"  ! Güncelleme var: pip install -U --force-reinstall "
-                f'"vitalwatch @ git+{REPO_URL}@v{latest}"'
-            )
+            print("  ! Güncelleme var: pip install -U vitalwatch")
     except Exception:  # noqa: BLE001
         _line("Güncel sürüm", "denetlenemedi")
 
 
 def latest_version(timeout=UPDATE_TIMEOUT):
-    """En yüksek kararlı etiket (``"0.1.2"``) ya da ``None``. Hiç fırlatmaz."""
+    """PyPI'daki güncel kararlı sürüm (``"0.2.0"``) ya da ``None``. Hiç fırlatmaz.
+
+    ``info.version`` PyPI'ın "en yeni" saydığı sürümdür; ön sürüm (``-rc1``,
+    ``0.3.0rc1``) kararlı sayılmaz ve uyarı üretmez.
+    """
     try:
         request = urllib.request.Request(
-            TAGS_URL,
+            PYPI_URL,
             headers={
                 "User-Agent": f"vitalwatch/{__version__} (vitalwatch-status)",
-                "Accept": "application/vnd.github+json",
+                "Accept": "application/json",
             },
         )
 
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-            tags = json.loads(response.read(2 * 1024 * 1024).decode("utf-8"))
+            data = json.loads(response.read(4 * 1024 * 1024).decode("utf-8"))
 
-        versions = [
-            _stable(tag.get("name")) for tag in tags if isinstance(tag, dict)
-        ]
-        versions = [version for version in versions if version is not None]
+        version = data.get("info", {}).get("version") if isinstance(data, dict) else None
+        parsed = _stable(version)
 
-        if not versions:
+        if parsed is None:
             return None
 
-        return ".".join(str(part) for part in max(versions))
+        return ".".join(str(part) for part in parsed)
     except Exception:  # noqa: BLE001
         return None
 

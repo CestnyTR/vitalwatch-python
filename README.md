@@ -1,7 +1,9 @@
 # vitalwatch (Python)
 
 [VitalWatch Hub](https://github.com/CestnyTR/vitalwatch-hub) için Python raporlayıcı: sunucu
-hataları, yavaş istekler, canlılık.
+hataları, yavaş istekler, canlılık. Ayrıca sunucunun kendisini izleyen
+[`vitalwatch-agent`](#sunucu-ajanı-vitalwatch-agent): web sunucusu, PHP-FPM, veritabanı,
+systemd, Docker, OOM ve disk.
 
 Bağımlılık yok. Build adımı yok. Python 3.9+.
 
@@ -27,7 +29,7 @@ oturum verisi · çerez · ham SQL literalleri
 ## Kurulum
 
 ```bash
-pip install git+https://github.com/CestnyTR/vitalwatch-python.git
+pip install vitalwatch
 ```
 
 `.env` dosyasına — kardeş paketlerle aynı değişken isimleri:
@@ -176,10 +178,9 @@ Komut ayrıca şunları gösterir:
 - **`Sürüm etiketi`** — olaylara eklenecek `release` ve nereden bulunduğu:
   `abc123def456 (kaynak: .git)`; kaynak `VITALWATCH_RELEASE`, bir CI/PaaS değişkeninin
   adı, `.git` ya da `yok`. Ayrıntı: [Sürüm etiketi](#sürüm-etiketi-release).
-- **`Güncel sürüm`** — GitHub etiketlerindeki en yeni kararlı sürüm (paket PyPI'da
-  değil). Kurulu sürümden yeniyse bir `Güncelleme var: pip install -U
-  --force-reinstall "vitalwatch @ git+…@vX.Y.Z"` satırı yazılır; bu bir uyarıdır,
-  çıkış kodunu değiştirmez. Ağ yoksa ya da GitHub hız sınırına takıldıysa
+- **`Güncel sürüm`** — PyPI'daki en yeni kararlı sürüm (`info.version`). Kurulu sürümden
+  yeniyse bir `Güncelleme var: pip install -U vitalwatch` satırı yazılır; bu bir
+  uyarıdır, çıkış kodunu değiştirmez. Ağ yoksa ya da PyPI yanıt vermezse
   `denetlenemedi` yazar (2 sn zaman aşımı). Ağa hiç çıkılmaması için
   `VITALWATCH_STATUS_OFFLINE=1` (`1`, `true`, `yes`, `on`, `evet`; büyük/küçük harf fark
   etmez) — o durumda `Güncel sürüm` satırı hiç yazılmaz.
@@ -246,6 +247,148 @@ hub'a da yük olurdu.
 
 ---
 
+## Sunucu ajanı (`vitalwatch-agent`)
+
+SDK uygulamanın **içinden** bakar. Uygulamanın dışında kalan arızalar — nginx'in
+`502/504`'ü, PHP-FPM'in `pm.max_children` sınırı, PostgreSQL `FATAL`, düşen bir systemd
+servisi, sürekli yeniden başlayan bir Docker konteyneri, OOM killer, dolan disk — ancak
+sunucudan görülür. `vitalwatch-agent` sunucuda servis olarak çalışır, bunları izler ve
+**hata olayı** olarak hub'ın sunucu ucuna gönderir. Dil bağımsızdır: .NET, Go ya da statik
+site — sunucuda ne çalışıyorsa onun web sunucusu, veritabanı ve servis yöneticisi izlenir.
+
+Aynı paketle gelir; bağımlılık yok. Önerilen: her sunucu için hub'da ayrı bir proje
+(ör. `vps-ornek`), beyanı `agent`.
+
+### Kurulum
+
+```bash
+sudo python3 -m venv /opt/vitalwatch
+sudo /opt/vitalwatch/bin/pip install vitalwatch
+sudo ln -s /opt/vitalwatch/bin/vitalwatch-agent /usr/local/bin/vitalwatch-agent
+
+sudo install -d -m 700 /etc/vitalwatch
+sudo nano /etc/vitalwatch/agent.ini          # aşağıdaki örnek
+sudo chmod 600 /etc/vitalwatch/agent.ini
+
+sudo vitalwatch-agent check                  # kaynaklar ve yapılandırma
+sudo vitalwatch-agent check --test           # panele bir sınama olayı düşürür
+sudo sh -c 'vitalwatch-agent systemd > /etc/systemd/system/vitalwatch-agent.service'
+sudo systemctl daemon-reload && sudo systemctl enable --now vitalwatch-agent
+```
+
+Sanal ortam `/opt` altında olmalı: `ProtectHome=yes` ev dizinlerini, `PrivateTmp=yes`
+`/tmp`'yi servisten gizler. `systemd` komutu çalışan kurulumun yorumlayıcı yolunu yazar;
+yol ev dizinindeyse ya da `/tmp` altındaysa ilgili korumayı gevşetip yorum satırıyla
+belirtir.
+
+### `/etc/vitalwatch/agent.ini`
+
+```ini
+[hub]
+url = https://vitalwatch.example.com
+key = vps-anahtari
+secret = <panelden alınan 64 karakter>
+env = production
+
+[sources]
+# hepsi varsayılan "auto": varsa ve okunabiliyorsa açık. "on": yoksa check hata verir.
+nginx = auto
+apache = auto
+plesk = auto
+php_fpm = auto
+postgresql = auto
+mysql = auto
+mongodb = auto
+redis = auto
+journal = auto
+systemd = auto
+docker = auto
+disk = auto
+journal_errors = off      ; tüm err seviyesi journald satırları (gürültülü)
+docker_logs =             ; logu izlenecek konteyner adları, virgülle
+
+[disk]
+threshold = 90
+
+[ignore]
+hosts =                   ; hub'ın kendi host'u her zaman eklenir
+patterns =                ; satır başına bir düzenli ifade; ham satır eşleşirse atılır
+
+[log:plesk-panel]
+path = /var/log/plesk/panel.log
+pattern = \b(ERR|CRIT|ALERT|EMERG)\b
+kind = log_error
+```
+
+Yol sırası: `--config` → `VITALWATCH_AGENT_CONFIG` → `/etc/vitalwatch/agent.ini`.
+`VITALWATCH_URL`, `VITALWATCH_KEY`, `VITALWATCH_SECRET`, `VITALWATCH_ENV` ve
+`VITALWATCH_ENABLED` ortam değişkenleri `[hub]`'ı ezer. Ajan `.env` dosyası **okumaz**:
+`check` bir proje dizininde çalıştırılınca o projenin anahtarını almasın. Satır sonu
+yorumu yalnızca `;` (düzenli ifadelerde `#` geçebilir). Durum dosyası
+`/var/lib/vitalwatch-agent/state.json` (`VITALWATCH_AGENT_STATE_DIR` ile değişir).
+
+### Komutlar
+
+| Komut | Ne yapar |
+|---|---|
+| `vitalwatch-agent run` | Servis olarak çalışır. SIGTERM'de alt süreçleri kapatır, kuyruğu son kez gönderir, durumu kaydeder |
+| `vitalwatch-agent check` | Her kaynağı `bulundu` / `bulunamadı` / `okunamıyor` / `kapalı` olarak listeler; hub yapılandırmasını denetler (secret 64 karakter, https, ortam adı) |
+| `vitalwatch-agent check --test` | Ek olarak bir `log_error` sınama olayı gönderir ve HTTP durumunu olduğu gibi yazar |
+| `vitalwatch-agent systemd` | Sertleştirilmiş birim dosyasını yazdırır: `root`, `ProtectSystem=strict`, `ReadWritePaths=/var/lib/vitalwatch-agent`, `NoNewPrivileges`, `ProtectHome`, `PrivateTmp`, `Restart=always` |
+
+Servis root çalışır, çünkü Plesk vhost logları ve Docker soketi başka türlü okunamıyor.
+Ajan durum dosyası dışında hiçbir yere yazmaz; yalnızca `journalctl`, `systemctl --failed`,
+`docker events` ve `docker logs` komutlarını **okumak** için çalıştırır. `journalctl` ya da
+`docker` yoksa veya izin yoksa stderr'e tek bir uyarı yazar ve çalışmaya devam eder.
+
+### Ne toplanır
+
+| Tür | Kaynak | Örnek |
+|---|---|---|
+| `web_server` | `/var/log/nginx/*error*.log`, `/var/log/apache2/*error*.log`, `/var/log/httpd/*error*`, Plesk `/var/www/vhosts/system/*/logs/{error_log,proxy_error_log}` | `[ornek.com] upstream timed out … while reading response header from upstream` (+ `route: GET /api/x`, `status: 504`) |
+| `php_fpm` | `/var/log/php*-fpm.log`, `/var/log/php-fpm/*.log`, `/opt/plesk/php/*/var/log/php-fpm.log` | `[pool www] server reached pm.max_children setting (5), consider raising it` |
+| `database` | `/var/log/postgresql/*.log`, `/var/log/mysql/error.log`, `/var/log/mariadb/*.log`, `/var/log/mysqld.log`, `/var/log/mongodb/mongod.log`, `/var/log/redis/*.log` | `FATAL: remaining connection slots are reserved …` |
+| `service_failed` | journald + 5 dakikada bir `systemctl --failed` | `php8.4-fpm.service: Failed with result 'exit-code'` |
+| `container_failed` | `docker events` | `api: exited with code 137`, `api: restart loop (3 in 10 min)`, `api: unhealthy`, `api: killed by OOM` |
+| `oom` | journald (çekirdek, systemd-oomd) | `Out of memory: Killed process <n> (php-fpm8.4)` |
+| `kernel` | journald (çekirdek) | `php-fpm8.4[<n>]: segfault in libc.so.6`, disk G/Ç hataları |
+| `disk_full` | `/proc/mounts`'taki gerçek dosya sistemleri | `/var: disk 93% full`, `/: inodes 91% used` — bağlama noktası başına saatte en fazla bir |
+| `log_error` | `[log:<ad>]` bölümleri, `docker_logs`, `journal_errors = on` | desen eşleşen satır |
+
+- Her log ilk görüldüğünde **sonundan** okunur; geçmiş içe aktarılmaz. Konumlar
+  (inode + ofset) ve journald imleci durum dosyasında tutulur; log döndürme ve kırpılma
+  algılanır. Glob'lar dakikada bir yeniden taranır: Plesk'te yeni açılan site yeniden
+  başlatma gerektirmeden izlenir.
+- Gürültü elenir: 404'lerin `open() … failed`'ı, TLS el sıkışma hataları, `[warn]`,
+  PHP uyarıları (yalnızca `Fatal error` / `Parse error` gelir), uygulama düzeyi SQL
+  hataları (SDK'nın işi), `docker stop`'un ürettiği çıkış kodları.
+- Aynı mesaj dakikada en fazla 20, toplam dakikada en fazla 300 olay. Gönderim 5 sn'de
+  bir ya da 25 olayda; gövde 8 KB ve istek başına 8 olaya bölünür. Hub erişilemezse en
+  fazla 1000 olay bekletilir ve üstel geri çekilmeyle yeniden denenir.
+- 5 dakikada bir canlılık isteği (`{"events": [], "runtime": "agent", …}`): ajan durursa
+  projenin sunucu kanalı susar ve hub'ın kurulum sağlığı bunu gösterir.
+- Hub'ın kendi alan adı (`url`'in host'u) her zaman yok sayılır: hub aynı sunucudaysa
+  kendi hatası ajanı, ajanın gönderimi yeni hatayı tetiklemesin.
+
+### Bilinçli olarak toplanmayanlar
+
+- **IP adresleri** — her satırda `[ip]` olur; nginx'in `client:` alanı tamamen silinir.
+- **Query string ve fragment** — istek satırından, URL'lerden ve yollardan atılır;
+  `route` yalnızca `GET /yol` taşır.
+- **`referrer` / `referer` ve `host` başlıkları** — tamamen silinir. Site adı
+  istemcinin yazdığı `host`'tan değil, yapılandırmadaki `server_name`'den ya da Plesk
+  yolundan alınır.
+- Ardından SDK'nın maskesi: e-posta, kart, telefon, TC kimlik, IBAN, uzun jetonlar;
+  veritabanı mesajlarındaki tırnaklı değerler `?` olur.
+- **SSH / kimlik doğrulama logları** (her satır IP taşır, IP'siz hâli anlamsız),
+  **erişim logları** (`access.log` — hata değil trafik; ziyaret modülü zaten var),
+  **posta logları** (alıcı adresleri) hiç okunmaz. `journal_errors = on` modunda da
+  `sshd`, `sudo`, `postfix`, `dovecot` gibi kaynaklar atlanır.
+- CPU/RAM/disk **grafiği**, sürekli metrik ve süreç listesi yoktur: yalnızca eşik
+  aşıldığında tek olay.
+
+---
+
 ## Davranış garantileri
 
 1. **Hata yutulmaz.** Handler zinciri korunur, `raise` engellenmez.
@@ -259,20 +402,11 @@ hub'a da yük olurdu.
 
 ## Güncelleme ve sürümleme
 
-Sürüm **sabitlenmez**: kurulan her zaman deponun son hâlidir. Karşılığında bir kural
-zorunlu hâle gelir — **her yayında sürüm numarası yükseltilmelidir.**
-
-Sebep ölçüldü: pip, doğrudan git URL'i verilen bir paketi depoyu klonlayıp metadata'sını
-okuduktan sonra sürüm numarasına bakar. Numara kuruluyla aynıysa **kurulumu atlar** ve
-`-U` bunu değiştirmez:
-
-| Komut | Sürüm aynıysa | Sürüm yükselmişse |
-|---|---|---|
-| `pip install -r requirements.txt` | atlar | kurar |
-| `pip install -U ...` | atlar | kurar |
-| `pip install --force-reinstall ...` | kurar | kurar |
-
-Yani numara yükseltilmeden yapılan bir yayın, kurulu projelere **hiç ulaşmaz** ve bu
+Paket PyPI'dadır: `pip install -U vitalwatch` en yeni kararlı sürümü kurar. Sürüm
+**sabitlenmezse** kurulan her zaman son yayındır; karşılığında bir kural zorunlu hâle
+gelir — **her yayında sürüm numarası yükseltilmelidir.** pip, numarası kuruluyla aynı
+olan paketi yeniden kurmaz; PyPI aynı numarayla ikinci yüklemeyi zaten reddeder.
+Numara yükseltilmeden yapılan bir düzeltme kurulu projelere **hiç ulaşmaz** ve bu
 sessizce olur — paketin bütün tasarımının karşı durduğu arıza biçimi.
 
 Sürüm çıkarma sırası:
@@ -280,14 +414,12 @@ Sürüm çıkarma sırası:
 1. `pyproject.toml` içindeki `version` **ve** `src/vitalwatch/reporter.py` içindeki
    `SDK_VERSION` birlikte yükseltilir. İkisi ayrışırsa panelde yanlış SDK sürümü görünür.
 2. `CHANGELOG.md`'ye giriş.
-3. `python -m unittest discover -s tests`
-4. Commit, `git tag vX.Y.Z`, `git push origin vX.Y.Z`.
-5. Kurulu projelerde `pip install -r requirements.txt`, ardından `vitalwatch-status` ile
-   doğrulama. Panelde SDK sürümünün yenilendiği görülmelidir.
-
-Acil bir düzeltme sürüm numarası yükseltmeden dağıtılacaksa tek yol
-`--force-reinstall`; ama o durumda panel eski sürüm numarasını göstermeye devam eder ve
-hangi sunucunun güncellendiği izlenemez.
+3. `python -m pytest -q`
+4. Commit, `git tag vX.Y.Z`, `git push origin vX.Y.Z`. Etiket `publish` iş akışını
+   tetikler: testler geçerse ve etiket paket sürümüyle eşleşirse PyPI'ye yüklenir.
+5. Kurulu projelerde `pip install -U vitalwatch`, ardından `vitalwatch-status` ile
+   doğrulama. Panelde SDK sürümünün yenilendiği görülmelidir. Sunucu ajanı için
+   `/opt/vitalwatch/bin/pip install -U vitalwatch && systemctl restart vitalwatch-agent`.
 
 ## Test
 
