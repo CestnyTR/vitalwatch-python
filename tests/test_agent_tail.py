@@ -170,7 +170,7 @@ class TailTest(unittest.TestCase):
 
         self.assertEqual([], tailer.files())
         self.assertEqual(1, len(self.warnings))
-        self.assertIn("okunamıyor", self.warnings[0])
+        self.assertIn("not readable", self.warnings[0])
 
     def test_invalid_utf8_replaced(self):
         self.write("")

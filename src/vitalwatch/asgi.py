@@ -1,6 +1,6 @@
-"""ASGI entegrasyonu (FastAPI, Starlette ve diğer ASGI uygulamaları).
+"""ASGI integration (FastAPI, Starlette and other ASGI applications).
 
-Kullanım (FastAPI / Starlette)::
+Usage (FastAPI / Starlette)::
 
     from fastapi import FastAPI
     from vitalwatch.asgi import VitalWatchASGIMiddleware
@@ -8,28 +8,29 @@ Kullanım (FastAPI / Starlette)::
     app = FastAPI()
     app.add_middleware(VitalWatchASGIMiddleware)
 
-Herhangi bir ASGI uygulaması için doğrudan sarmalanabilir::
+Any ASGI application can be wrapped directly::
 
     app = VitalWatchASGIMiddleware(app)
 
-Saf ASGI ara katmanıdır: Starlette ve FastAPI bu modülün **import anında**
-yüklenmez; yalnızca istek sırasında, varsa, tembel olarak bakılır. Paket
-çerçevesiz projede de ``import vitalwatch`` ile çalışmaya devam eder.
+This is plain ASGI middleware: Starlette and FastAPI are **not** imported
+when this module is imported; they are only looked up lazily during a request,
+if present. ``import vitalwatch`` keeps working in framework-less projects.
 
-Starlette'te istisnanın yolu (1.6 ile doğrulandı):
+How an exception travels in Starlette (verified with 1.6):
 
-- ``ServerErrorMiddleware`` kullanıcı ara katmanlarının **dışında** durur;
-  yakalanmamış hata bizim katmanımızdan geçerek ona ulaşır, o da 500 yazıp
-  hatayı yeniden fırlatır. ``@app.exception_handler(Exception)`` (ya da 500)
-  işleyicisi de ``ServerErrorMiddleware``'e bağlanır — hata yine bizden geçer.
-- Belirli bir sınıfa bağlı işleyiciler (``@app.exception_handler(ValueError)``)
-  ve ``HTTPException`` ise içteki ``ExceptionMiddleware``'de işlenir; hata bize
-  hiç ulaşmaz. İşleyici 5xx dönerse stack kaybolmasın diye bu işleyiciler
-  örnek düzeyinde sarılır (Flask'taki ``handle_user_exception``
-  sarmalayıcısının karşılığı). ``ExceptionMiddleware`` ilk istekte ``.app``
-  zinciri boyunca aranır; ara katman sırası fark etmez. Uygulama elle
-  sarmalanırsa (``VitalWatchASGIMiddleware(app)``) Starlette yığınını ilk
-  istekte kurduğu için sarma ilk istekten **sonra** devreye girer.
+- ``ServerErrorMiddleware`` sits **outside** user middleware; an uncaught
+  error passes through our layer to reach it, and it writes a 500 and
+  re-raises. An ``@app.exception_handler(Exception)`` (or 500) handler is also
+  attached to ``ServerErrorMiddleware`` — the error still passes through us.
+- Handlers bound to a specific class (``@app.exception_handler(ValueError)``)
+  and ``HTTPException`` are handled in the inner ``ExceptionMiddleware``; the
+  error never reaches us. So that the stack is not lost when such a handler
+  returns a 5xx, these handlers are wrapped per instance (the counterpart of
+  the ``handle_user_exception`` wrapper in Flask). ``ExceptionMiddleware`` is
+  looked up along the ``.app`` chain on the first request, so middleware order
+  does not matter. If the app is wrapped by hand
+  (``VitalWatchASGIMiddleware(app)``), Starlette builds its stack on the first
+  request, so the wrapping takes effect **after** the first request.
 """
 
 import time
@@ -59,11 +60,11 @@ _MAX_ATTEMPTS = 3
 
 
 class VitalWatchASGIMiddleware:
-    """Yavaş istek, 5xx ve yakalanmamış istisna ölçümü.
+    """Reports slow requests, 5xx responses and uncaught exceptions.
 
-    :param app: İçteki ASGI uygulaması.
-    :param hook_process_errors: Yakalanmamış istisna kancalarını ve canlılık
-        zamanlayıcısını da kurar. Varsayılan açık (Flask eklentisiyle aynı).
+    :param app: The inner ASGI application.
+    :param hook_process_errors: Also install the uncaught-exception hooks and
+        the heartbeat timer. On by default (same as the Flask extension).
     """
 
     def __init__(self, app, hook_process_errors=True):
@@ -222,12 +223,12 @@ def _measure(scope, status, started, ended=None):
 
 
 def route_pattern(scope):
-    """Eşleşen rota deseni (``/urun/{urun_id}``), gerçek yol değil.
+    """The matched route pattern (``/product/{product_id}``), not the actual path.
 
-    Sıra: FastAPI'nin ``scope["route"]``'u, Starlette yönlendirici ağacında
-    uç noktanın deseni, son çare query string'siz gerçek yol (M3).
-    ``Mount`` altındaki rotalarda, isteğin bu katmana girdiği andaki kök ile
-    sonraki kök arasındaki önek desene eklenir.
+    Order: FastAPI's ``scope["route"]``, then the endpoint's pattern in the
+    Starlette router tree, and as a last resort the actual path without the
+    query string (M3). For routes under ``Mount``, the prefix between the root
+    path when the request entered this layer and the later root is prepended.
     """
     root_path = scope.get(_ROOT_PATH, "") or ""
 

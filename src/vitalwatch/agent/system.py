@@ -192,7 +192,7 @@ class FailedUnitsChecker:
         except FileNotFoundError:
             self.available = False
             if self.warn:
-                self.warn("systemctl bulunamadı; systemd kaynağı kapalı.")
+                self.warn("systemctl not found; systemd source disabled.")
             return
         except (OSError, subprocess.SubprocessError):
             return

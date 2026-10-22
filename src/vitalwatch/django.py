@@ -1,27 +1,28 @@
-"""Django entegrasyonu: yavaş istek, 5xx ve yakalanmamış istisna ölçümü.
+"""Django integration: slow requests, 5xx responses and uncaught exceptions.
 
-Kullanım (``settings.py``)::
+Usage (``settings.py``)::
 
     MIDDLEWARE = [
-        "vitalwatch.django.VitalWatchMiddleware",  # listenin başına yakın
+        "vitalwatch.django.VitalWatchMiddleware",  # near the top of the list
         ...
     ]
 
-Süreç kancaları (``hook_process``) ilk kurulumda bir kez açılır; kapatmak için
-``VITALWATCH_HOOK_PROCESS = False``.
+Process hooks (``hook_process``) are installed once on first setup; set
+``VITALWATCH_HOOK_PROCESS = False`` to turn them off.
 
-Django bu modülün **içinde** import edilir; paketin kendisi Django'ya bağımlı
-değildir ve Django kurulu olmayan bir projede ``import vitalwatch`` çalışır.
+Django is imported **inside** this module only; the package itself does not
+depend on Django, and ``import vitalwatch`` works in projects without it.
 
-Hatayı iki yoldan görür, tekilleştirme istisnanın üzerindeki işaretle yapılır:
+Errors are seen through two paths, deduplicated by a marker on the exception:
 
-- ``got_request_exception`` sinyali: Django bir istisnayı **500'e çevirdiği**
-  anda gönderir (``Http404``, ``PermissionDenied``, ``BadRequest``,
-  ``SuspiciousOperation`` için göndermez). Görünümün yanında altımızdaki ara
-  katmanlardan çıkan hataları da kapsar; ``process_exception`` onları görmez.
-- ``process_exception``: yalnızca görünüm hatalarında çağrılır; istisna
-  isteğe not edilir, yanıt 5xx çıkarsa ve sinyal kaçtıysa istek sonunda
-  raporlanır. ``None`` döner — Django'nun kendi işleyişi aynen sürer.
+- The ``got_request_exception`` signal: sent when Django **turns an exception
+  into a 500** (not sent for ``Http404``, ``PermissionDenied``, ``BadRequest``
+  or ``SuspiciousOperation``). Besides views it also covers errors raised by
+  middleware below ours, which ``process_exception`` does not see.
+- ``process_exception``: called for view errors only; the exception is noted
+  on the request and reported at the end of the request if the response is a
+  5xx and the signal was missed. Returns ``None`` — Django's own handling
+  continues unchanged.
 """
 
 import sys
@@ -44,7 +45,7 @@ _setup_done = False
 
 
 class VitalWatchMiddleware:
-    """Yeni tip Django ara katmanı (``get_response`` alır)."""
+    """New-style Django middleware (takes ``get_response``)."""
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -183,12 +184,13 @@ def _measure(request, response):
 
 
 def route_pattern(request):
-    """Django'nun eşleşen rota deseni (``/urun/<int:urun_id>/``), gerçek yol değil.
+    """Django's matched route pattern (``/product/<int:product_id>/``), not the actual path.
 
-    ``re_path`` desenlerinde baştaki ``^`` ve sondaki ``$`` atılır. Desen
-    yoksa (404, çözümleme öncesi hata) yola düşülür ve query string atılır (M3).
-    Desen ``scrubber.path``'ten geçirilmez: ``(?P<id>...)`` içindeki ``?``
-    query string sanılıp desen kesilirdi.
+    For ``re_path`` patterns the leading ``^`` and trailing ``$`` are removed.
+    Without a pattern (404, error before resolving) it falls back to the path
+    with the query string removed (M3). The pattern is not passed through
+    ``scrubber.path``: the ``?`` in ``(?P<id>...)`` would be taken for a query
+    string and the pattern cut off.
     """
     try:
         match = getattr(request, "resolver_match", None)

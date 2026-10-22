@@ -9,9 +9,20 @@ Kardeş paketler: `cestnytr/vitalwatch-laravel` (Laravel), `vitalwatch-node` (No
 
 ## Dil
 
-Yorumlar ve dokümantasyon Türkçe; **sınıf, fonksiyon ve değişken adları İngilizce** —
-yerel değişkenler dahil. Kardeş paketlerle aynı kural. README ve public API
-dokümantasyonu Türkçe.
+- **README, CHANGELOG ve paket açıklaması (`pyproject.toml` `description`) İngilizce.**
+  Paket public ve uluslararası kitleye yayınlanıyor — karar 22 Ekim 2026.
+- **Kullanıcının gördüğü her çıktı İngilizce:** CLI çıktısı (`vitalwatch-status`,
+  `vitalwatch-agent`), argparse yardımı, stderr/log uyarıları, `agent.ini` doğrulama
+  hataları, üretilen systemd birimi, SDK/ajanın ürettiği olay `msg` metinleri ve public
+  API docstring'leri (IDE `help()`'te görünür). Durum etiketleri kardeş SDK'larla aynı
+  kelimeleri kullanır (`SDK version`, `Latest version`, `could not check`,
+  `Update available: …`, `Release tag … (source: …)`, `Configuration OK.`, `found` /
+  `not found` / `not readable` / `disabled`). Üretilen `msg` şablonunu değiştirmek hub'da
+  parmak izini bir kez böler — CHANGELOG'a yazılır.
+- **Kod yorumları ve iç (yalnızca bakımcının okuduğu) docstring'ler Türkçe** kalır.
+  Girdi olarak kabul edilen eski Türkçe değerler (`evet`, `kapali` vb.) korunur.
+- **Sınıf, fonksiyon ve değişken adları İngilizce** — yerel değişkenler dahil.
+  Kardeş paketlerle aynı kural.
 
 ---
 

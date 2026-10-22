@@ -108,7 +108,7 @@ class Agent:
 
         if shutil.which(binary) is None:
             if mode == "on":
-                self.warn(f"{binary} bulunamadı; {name} kaynağı kapalı.")
+                self.warn(f"{binary} not found; {name} source disabled.")
             return False
 
         return True
@@ -175,7 +175,7 @@ class Agent:
                 try:
                     checker.check()
                 except Exception as error:  # noqa: BLE001
-                    self.warn(f"periyodik denetim hatası: {error}")
+                    self.warn(f"periodic check error: {error}")
 
             self.stop_event.wait(SYSTEM_INTERVAL)
 
@@ -216,7 +216,7 @@ class Agent:
                         self.save_state()
                         last_save = now
                 except Exception as error:  # noqa: BLE001 — döngü ölmesin
-                    self.warn(f"döngü hatası: {error}")
+                    self.warn(f"loop error: {error}")
         finally:
             self.shutdown()
 
@@ -237,10 +237,14 @@ class Agent:
 # Teşhis (check)
 # ---------------------------------------------------------------------- #
 
-FOUND = "bulundu"
-NOT_FOUND = "bulunamadı"
-NOT_READABLE = "okunamıyor"
-DISABLED = "kapalı"
+FOUND = "found"
+NOT_FOUND = "not found"
+NOT_READABLE = "not readable"
+DISABLED = "disabled"
+
+
+def _files(count):
+    return f"{count} file" + ("" if count == 1 else "s")
 
 
 def _files_status(patterns):
@@ -252,9 +256,9 @@ def _files_status(patterns):
     readable = [path for path in files if os.access(path, os.R_OK)]
 
     if not readable:
-        return NOT_READABLE, f"{len(files)} dosya, hiçbiri okunamıyor"
+        return NOT_READABLE, f"{_files(len(files))}, none readable"
 
-    detail = f"{len(readable)} dosya" + (f", {len(files) - len(readable)} okunamıyor" if len(readable) < len(files) else "")
+    detail = _files(len(readable)) + (f", {len(files) - len(readable)} not readable" if len(readable) < len(files) else "")
 
     return FOUND, detail
 
@@ -293,11 +297,11 @@ def source_report(config):
         result = _run(["journalctl", "-n", "1", "-q", "--no-pager", "-o", "json"])
 
         if result is None:
-            rows.append(("journal", NOT_FOUND, "journalctl yok"))
+            rows.append(("journal", NOT_FOUND, "journalctl not installed"))
         elif result.returncode != 0 or "insufficient permissions" in result.stderr or "not seeing messages" in result.stderr:
             rows.append(("journal", NOT_READABLE, (result.stderr.strip().splitlines() or [""])[0][:120]))
         else:
-            rows.append(("journal", FOUND, "tüm err satırları açık" if config.journal_errors else ""))
+            rows.append(("journal", FOUND, "all err-level lines enabled" if config.journal_errors else ""))
 
     # systemd
     if config.source_mode("systemd") == "off":
@@ -306,12 +310,12 @@ def source_report(config):
         result = _run(FailedUnitsChecker.COMMAND)
 
         if result is None:
-            rows.append(("systemd", NOT_FOUND, "systemctl yok"))
+            rows.append(("systemd", NOT_FOUND, "systemctl not installed"))
         elif result.returncode != 0:
             rows.append(("systemd", NOT_READABLE, result.stderr.strip()[:120]))
         else:
             failed = FailedUnitsChecker.parse(result.stdout)
-            rows.append(("systemd", FOUND, f"şu an başarısız: {', '.join(failed)}" if failed else "başarısız birim yok"))
+            rows.append(("systemd", FOUND, f"currently failed: {', '.join(failed)}" if failed else "no failed units"))
 
     # docker
     if config.source_mode("docker") == "off":
@@ -320,14 +324,14 @@ def source_report(config):
         result = _run(["docker", "info", "--format", "{{.ServerVersion}}"])
 
         if result is None:
-            rows.append(("docker", NOT_FOUND, "docker yok"))
+            rows.append(("docker", NOT_FOUND, "docker not installed"))
         elif result.returncode != 0:
             message = result.stderr.strip()
             status = NOT_READABLE if "permission denied" in message.lower() else NOT_FOUND
             rows.append(("docker", status, message.splitlines()[0][:120] if message else ""))
         else:
-            logs = f", loglar: {', '.join(config.docker_logs)}" if config.docker_logs else ""
-            rows.append(("docker", FOUND, f"sürüm {result.stdout.strip()}{logs}"))
+            logs = f", logs: {', '.join(config.docker_logs)}" if config.docker_logs else ""
+            rows.append(("docker", FOUND, f"version {result.stdout.strip()}{logs}"))
 
     # disk
     if config.source_mode("disk") == "off":
@@ -350,8 +354,8 @@ def source_report(config):
                 except OSError:
                     continue
                 if disk is not None:
-                    parts.append(f"{mount_point} %{int(disk)}")
+                    parts.append(f"{mount_point} {int(disk)}%")
 
-            rows.append(("disk", FOUND, f"eşik %{config.disk_threshold}; " + ", ".join(parts)))
+            rows.append(("disk", FOUND, f"threshold {config.disk_threshold}%; " + ", ".join(parts)))
 
     return rows

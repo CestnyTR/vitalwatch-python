@@ -325,7 +325,7 @@ class LineProcessTest(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertFalse(thread.available)
         self.assertEqual(1, len(warnings))
-        self.assertIn("bulunamadı", warnings[0])
+        self.assertIn("not found", warnings[0])
 
     def test_lines_delivered_and_exit_warned(self):
         lines, warnings = [], []

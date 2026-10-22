@@ -1,18 +1,20 @@
-"""Kişisel veri temizliği — gönderimden ÖNCE uygulanır.
+"""Personal data scrubbing — applied BEFORE sending.
 
-Hub tarafında aynı temizlik tekrar yapılır. İkisi de gereklidir: hub kendini
-savunur, paket ise kişisel veriyi ağa hiç çıkarmaz. Bir sızıntı olacaksa ilk
-savunma hattı burasıdır.
+The hub repeats the same scrubbing. Both are needed: the hub defends itself,
+while the package never puts personal data on the wire at all. If there is
+going to be a leak, this is the first line of defence.
 
-Desenler kardeş paketlerle (``cestnytr/vitalwatch-laravel`` PHP, ``vitalwatch-node``)
-aynı davranmak zorundadır: ayrışırlarsa aynı hata iki SDK'da farklı maskelenir,
-parmak izi bölünür ve panelde tek hata iki satır olarak görünür.
+The patterns must behave exactly like the sibling packages
+(``cestnytr/vitalwatch-laravel`` PHP, ``vitalwatch-node``): if they diverge,
+the same error is masked differently in two SDKs, the fingerprint splits and a
+single error shows up as two rows in the panel.
 
-Tek bilinçli sapma Unicode özellik kaçışlarındadır: Python'un ``re`` modülü
-``\\p{L}`` desteklemez. Karşılıkları ``\\w`` / ``[^\\W\\d_]`` ile kuruldu —
-``re`` str desenlerinde varsayılan olarak Unicode farkındadır, yani "ş", "ü"
-gibi harfler de kapsanır. Fark yalnızca e-posta alan adındaki alt çizgide
-kalır (bu paket onu da maskeler); gerçekçi girdide davranış aynıdır.
+The one deliberate deviation is Unicode property escapes: Python's ``re``
+module does not support ``\\p{L}``. The equivalents are built with ``\\w`` /
+``[^\\W\\d_]`` — ``re`` str patterns are Unicode-aware by default, so
+non-ASCII letters are covered too. The only difference is the underscore in
+an email domain (this package masks that as well); on realistic input the
+behaviour is the same.
 """
 
 import re
@@ -85,7 +87,7 @@ _SQL_LITERALS = [
 
 
 def text(value, limit):
-    """Maskele ve kırp. Boş değer ``None`` döner — hub'a boş alan gitmez."""
+    """Mask and truncate. An empty value returns ``None`` — no empty fields are sent."""
     if value is None or value == "":
         return None
 
@@ -98,7 +100,7 @@ def text(value, limit):
 
 
 def path(value):
-    """Query string ve fragment atılır; yalnızca yol kalır (M3)."""
+    """Drop the query string and fragment; only the path is kept (M3)."""
     if not value:
         return None
 
@@ -113,12 +115,12 @@ def path(value):
 
 
 def sql(value):
-    """SQL normalize: literal değerler ``?`` ile değiştirilir.
+    """Normalize SQL: literal values are replaced with ``?``.
 
-    ``where email = 'ahmet@ornek.com'`` → ``where email = ?``
+    ``where email = 'jane@example.com'`` → ``where email = ?``
 
-    Hem KVKK gereği hem gruplama açısından doğru: aynı sorgu farklı
-    parametrelerle çalıştığında tek parmak izinde toplanır.
+    Right for both privacy law (KVKK/GDPR) and grouping: the same query run
+    with different parameters collapses into one fingerprint.
     """
     if not value:
         return None
@@ -132,11 +134,11 @@ def sql(value):
 
 
 def message(value, contains_sql=False):
-    """Hata mesajı.
+    """Scrub an error message.
 
-    Veritabanı sürücülerinin hataları SQL'i bağlanmış değerlerle taşır; önce
-    SQL normalize edilir, sonra genel maskeleme uygulanır. Yalnızca sorgu
-    alanını temizlemek yetmiyordu — asıl sızıntı mesajın kendisinden oluyordu.
+    Database driver errors carry the SQL with bound values; the SQL is
+    normalized first, then general masking is applied. Cleaning only the query
+    field was not enough — the real leak came from the message itself.
     """
     if not value:
         return None
@@ -151,9 +153,9 @@ def message(value, contains_sql=False):
 
 
 def stack(value):
-    """Traceback kısaltılır ve maskelenir.
+    """Truncate and mask a traceback.
 
-    site-packages satırları atılmaz — hatanın nerede olduğunu bulmak için
-    zincirin tamamı gerekir — ama uzunluk sınırlanır.
+    site-packages frames are kept — the whole chain is needed to find where
+    the error happened — but the length is capped.
     """
     return text(value, 2000)

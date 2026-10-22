@@ -122,7 +122,7 @@ class Sender:
     def _roll_window(self, now):
         if self._window_start is None or now - self._window_start >= WINDOW_SECONDS:
             if self.suppressed:
-                self._warn(f"son dakikada {self.suppressed} olay hız sınırı nedeniyle atlandı.")
+                self._warn(f"{self.suppressed} events skipped in the last minute due to rate limiting.")
 
             self._window_start = now
             self._message_counts.clear()
@@ -173,11 +173,11 @@ class Sender:
 
         if not self._outage_reported:
             self._outage_reported = True
-            self._warn(f"hub'a gönderilemedi ({reason}); olaylar bekletiliyor, yeniden denenecek.")
+            self._warn(f"could not send to hub ({reason}); events held, will retry.")
 
     def _succeeded(self, now):
         if self._outage_reported:
-            self._warn("hub'a yeniden ulaşıldı.")
+            self._warn("hub reachable again.")
 
         self._failures = 0
         self._next_attempt = 0.0
@@ -199,7 +199,7 @@ class Sender:
         if status is None:
             if result.get("error") in ("missing-config", "body-too-large"):
                 return "drop", result.get("error")
-            return "retry", result.get("error") or "ağ hatası"
+            return "retry", result.get("error") or "network error"
 
         if status == 429 or status >= 500:
             return "retry", f"HTTP {status}"
@@ -238,7 +238,7 @@ class Sender:
                 continue
 
             if outcome == "drop":
-                self._warn(f"{len(items)} olay hub tarafından reddedildi ({reason}); atıldı.")
+                self._warn(f"{len(items)} events rejected by the hub ({reason}); discarded.")
                 continue
 
             # Gönderilemeyenler kuyruğun başına; taşan en eskiler atılır.
@@ -272,7 +272,7 @@ class Sender:
         elif outcome == "retry":
             self._failed(self.clock(), reason)
         else:
-            self._warn(f"canlılık isteği reddedildi ({reason}).")
+            self._warn(f"heartbeat rejected ({reason}).")
             # Yine de 5 dk boyunca tekrar deneme; yapılandırma düzelmeden sonuç değişmez.
             self._last_success = self.clock()
 
@@ -306,7 +306,7 @@ class Sender:
             try:
                 self.tick()
             except Exception as error:  # noqa: BLE001 — gönderim thread'i ölmesin
-                self._warn(f"gönderim hatası: {error}")
+                self._warn(f"send error: {error}")
 
             self._wake.wait(1.0)
             self._wake.clear()

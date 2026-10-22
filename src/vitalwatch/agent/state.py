@@ -43,8 +43,8 @@ class StateStore:
 
         if self.directory != preferred:
             print(
-                f"vitalwatch-agent: {preferred} yazılamıyor; durum dosyası "
-                f"{self.directory or 'tutulamıyor'} altında.",
+                f"vitalwatch-agent: {preferred} is not writable; state file "
+                + (f"kept under {self.directory}." if self.directory else "cannot be kept."),
                 file=sys.stderr,
             )
 

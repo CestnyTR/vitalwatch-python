@@ -1,13 +1,14 @@
-"""Olayları biriktirir ve hub'a gönderir.
+"""Collects events and sends them to the hub.
 
-Node paketinden yapısal fark **gönderimin nasıl beklenmediğidir.** Node'da
-``fetch`` zaten beklenmeyen bir promise; burada WSGI senkron çalışır ve
-``send()`` çağrısı isteği doğrudan geciktirirdi. Bu yüzden olaylar sınırlı bir
-kuyruğa bırakılır, tek bir arka plan thread'i gönderir (davranış garantisi 4).
+The structural difference from the Node package is **how sending is kept off
+the request path.** In Node, ``fetch`` is simply a promise nobody awaits; here
+WSGI is synchronous and a ``send()`` call would delay the request directly. So
+events are put on a bounded queue and a single background thread sends them
+(behaviour guarantee 4).
 
-Kuyruk **sınırlı ve dolduğunda olay düşürülür**: bir hata fırtınasında
-sınırsız büyüyen kuyruk, izlenen uygulamanın belleğini yer — izleme paketinin
-izlediği uygulamayı öldürmesi, çözdüğü sorundan büyük bir sorundur.
+The queue is **bounded and drops events when full**: during an error storm an
+unbounded queue would eat the monitored application's memory — a monitoring
+package killing the app it monitors is a bigger problem than the one it solves.
 """
 
 import atexit
@@ -20,7 +21,7 @@ import traceback
 from . import scrubber
 from .client import HubClient
 
-SDK_VERSION = "0.2.2"
+SDK_VERSION = "0.2.3"
 
 #: Kuyruk derinliği. Hata fırtınasında bellek sınırı; hub'ın istek başına
 #: kabul ettiği 8 olayın epey üstünde, normal işleyişte hiç dolmaz.
@@ -50,13 +51,13 @@ _ENV_ALIASES = {
 
 
 def normalize_env(value):
-    """Ortam adını hub'ın kabul ettiği karşılığa çevirir.
+    """Map an environment name to the value the hub accepts.
 
-    Hub yalnızca production/staging/local kabul ediyor. Eskiden tanınmayan
-    değer sessizce "production" sayılıyordu: ``APP_ENV=testing`` ile çalışan
-    bir kurulumun verisi canlı verinin arasına karışıyordu. Artık takma adlar
-    çevrilir; tanınmayan değer olduğu gibi gider (hub onu panelde "ortam"
-    reddi olarak sayar) ve ``vitalwatch-status`` hata verir.
+    The hub only accepts production/staging/local. Unknown values used to be
+    silently treated as "production", so data from an ``APP_ENV=testing``
+    setup got mixed into live data. Aliases are now mapped; an unknown value
+    is sent as is (the hub counts it as an "environment" rejection in the
+    panel) and ``vitalwatch-status`` reports an error.
     """
     if value is None:
         return "production"
@@ -70,6 +71,12 @@ def normalize_env(value):
 
 
 class Reporter:
+    """Builds events, adds the common fields and sends them to the hub.
+
+    Usually created through ``vitalwatch.init()``; the options match the
+    ``VITALWATCH_*`` environment variables. No method ever raises.
+    """
+
     def __init__(
         self,
         url=None,
@@ -107,13 +114,14 @@ class Reporter:
     # ------------------------------------------------------------------ #
 
     def configured(self):
+        """``True`` if enabled and URL, key and secret are all set."""
         return self.enabled and self.client.configured()
 
     def record_exception(self, error, kind=None, route=None, method=None, block=False):
-        """Bir istisnayı raporlar.
+        """Report an exception.
 
-        Hiçbir koşulda hata fırlatmaz ve beklenmesi gerekmez: ``block=False``
-        iken kuyruğa bırakılıp hemen döner.
+        Never raises and never needs to be awaited: with ``block=False`` the
+        event is queued and the call returns immediately.
         """
         try:
             if not self.configured():
@@ -145,10 +153,10 @@ class Reporter:
             return {"sent": False, "status": None, "error": str(error)}
 
     def record_request(self, route, method, status, duration_ms, block=False):
-        """İstek bitiminde çağrılır.
+        """Called when a request finishes.
 
-        Yalnızca yavaş istek veya 5xx raporlanır; her isteği göndermek izlenen
-        uygulamaya da hub'a da yük olurdu.
+        Only slow requests and 5xx responses are reported; sending every
+        request would burden both the monitored application and the hub.
         """
         try:
             if not self.wants_request(status, duration_ms):
@@ -177,10 +185,10 @@ class Reporter:
             return None
 
     def wants_request(self, status, duration_ms):
-        """Bu istek gönderilecek mi: yapılandırılmış ve (5xx ya da yavaş).
+        """Whether this request would be reported: configured and (5xx or slow).
 
-        Entegrasyonlar rota desenini yalnızca ``True`` ise hesaplar; her hızlı
-        200 için yönlendirici taranmasın.
+        Integrations compute the route pattern only when this is ``True``, so
+        the router is not scanned for every fast 200.
         """
         try:
             if not self.configured():
@@ -191,14 +199,15 @@ class Reporter:
             return False
 
     def heartbeat(self, block=True):
-        """"Buradayım" — olay taşımayan canlılık isteği.
+        """"I am alive" — a heartbeat request that carries no events.
 
-        Hub'ın bir kurulumun çalıştığını anlamasının tek yolu hata gelmesiydi;
-        sonuç ters dönüyordu: hatasız çalışan uygulama "kurulum bozuk"
-        görünüyordu. Artık kanıt isteğin kendisi — boş bir toplu istek yeterli.
+        The hub used to learn that a setup was working only when errors
+        arrived, which backfired: an app running without errors looked like a
+        "broken setup". Now the request itself is the proof — an empty batch is
+        enough.
 
-        Varsayılan olarak **bekler**: canlılık isteği sıcak yolda değil,
-        sonucunu okuyan tek yer de teşhis komutu.
+        **Blocks** by default: the heartbeat is not on the hot path, and the
+        only caller that reads its result is the diagnostic command.
         """
         if not self.configured():
             return {"sent": False, "status": None, "error": "missing-config"}
@@ -210,7 +219,7 @@ class Reporter:
     # ------------------------------------------------------------------ #
 
     def send(self, event, block=False):
-        """Ortak alanları ekleyip gönderir ya da kuyruğa bırakır."""
+        """Add the common fields, then send the event or queue it."""
         body = dict(event)
         body.update(
             {
@@ -272,7 +281,7 @@ class Reporter:
                 self._queue.task_done()
 
     def flush(self, timeout=3.0):
-        """Kuyruğu boşaltmayı bekler. Kapanışta ve testlerde çağrılır."""
+        """Wait for the queue to drain. Called at shutdown and in tests."""
         current = self._queue
 
         if current is None:
@@ -370,9 +379,10 @@ class Reporter:
 
 
 def memory_mb():
-    """Sürecin tepe bellek kullanımı (RSS), MB. Ölçülemezse ``None``.
+    """Peak memory usage (RSS) of the process in MB, or ``None`` if unavailable.
 
-    ``resource`` Windows'ta yok. ``ru_maxrss`` Linux'ta KB, macOS'ta bayt.
+    ``resource`` does not exist on Windows. ``ru_maxrss`` is in KB on Linux and
+    in bytes on macOS.
     """
     try:
         import resource

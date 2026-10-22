@@ -60,9 +60,9 @@ class StatusTest(unittest.TestCase):
         )
 
         self.assertEqual(0, code)
-        self.assertIn("Güncel sürüm", out)
+        self.assertIn("Latest version", out)
         self.assertIn("0.10.1", out)
-        self.assertIn("Güncelleme var: pip install -U vitalwatch", out)
+        self.assertIn("Update available: pip install -U vitalwatch", out)
         self.assertNotIn("git+", out)
 
         request = urlopen.call_args[0][0]
@@ -76,13 +76,13 @@ class StatusTest(unittest.TestCase):
 
             self.assertEqual(0, code)
             self.assertIn("0.2.0", out)
-            self.assertNotIn("Güncelleme var", out)
+            self.assertNotIn("Update available", out)
 
     def test_prerelease_not_counted(self):
         for version in ("0.3.0-beta", "0.3.0rc1"):
             _, out, _, _ = self.run_cli(urlopen=mock.Mock(return_value=pypi(version)))
 
-            self.assertNotIn("Güncelleme var", out)
+            self.assertNotIn("Update available", out)
             self.assertNotIn("0.3.0", out)
 
     def test_network_error_check_failed(self):
@@ -96,14 +96,14 @@ class StatusTest(unittest.TestCase):
             code, out, _, _ = self.run_cli(urlopen=mock.Mock(side_effect=failure))
 
             self.assertEqual(0, code)
-            self.assertIn("denetlenemedi", out)
-            self.assertNotIn("Güncelleme var", out)
+            self.assertIn("could not check", out)
+            self.assertNotIn("Update available", out)
 
     def test_broken_response_or_missing_tag_check_failed(self):
         for response in (_Response({"message": "Not Found"}), _Response([]), _Response(["1.0.0"]), _Response({"info": {}}), _Response({"info": {"version": None}})):
             _, out, _, _ = self.run_cli(urlopen=mock.Mock(return_value=response))
 
-            self.assertIn("denetlenemedi", out)
+            self.assertIn("could not check", out)
 
     def test_cevrimdisi_degerleri(self):
         for flag in ("1", "true", "TRUE", "yes", "on", "On", "evet", "EVET"):
@@ -111,13 +111,13 @@ class StatusTest(unittest.TestCase):
             code, out, _, _ = self.run_cli(config=config)
 
             self.assertEqual(0, code, flag)
-            self.assertNotIn("Güncel sürüm", out, flag)
+            self.assertNotIn("Latest version", out, flag)
 
         for flag in ("0", "false", "hayir", ""):
             config = dict(CONFIG, VITALWATCH_STATUS_OFFLINE=flag)
             _, out, _, urlopen = self.run_cli(config=config, urlopen=mock.Mock(return_value=pypi("0.2.0")))
 
-            self.assertIn("Güncel sürüm", out, flag)
+            self.assertIn("Latest version", out, flag)
             self.assertEqual(1, urlopen.call_count, flag)
 
     def test_offline_skips_check(self):
@@ -139,15 +139,15 @@ class StatusTest(unittest.TestCase):
                     out = out.getvalue()
 
             self.assertEqual(0, code, source)
-            self.assertNotIn("Güncel sürüm", out, source)
+            self.assertNotIn("Latest version", out, source)
 
     def test_version_tag_line(self):
         environ = {"VITALWATCH_STATUS_OFFLINE": "1"}
         cases = (
-            (("abc123def456", ".git"), "abc123def456 (kaynak: .git)"),
-            (("v2", "VITALWATCH_RELEASE"), "v2 (kaynak: VITALWATCH_RELEASE)"),
-            (("0123456789ab", "HEROKU_SLUG_COMMIT"), "0123456789ab (kaynak: HEROKU_SLUG_COMMIT)"),
-            ((None, None), "tanımsız (kaynak: yok)"),
+            (("abc123def456", ".git"), "abc123def456 (source: .git)"),
+            (("v2", "VITALWATCH_RELEASE"), "v2 (source: VITALWATCH_RELEASE)"),
+            (("0123456789ab", "HEROKU_SLUG_COMMIT"), "0123456789ab (source: HEROKU_SLUG_COMMIT)"),
+            ((None, None), "not set (source: none)"),
         )
 
         for detected, expected in cases:
@@ -160,7 +160,7 @@ class StatusTest(unittest.TestCase):
                     redirect_stdout(out), redirect_stderr(io.StringIO()):
                 cli.main([])
 
-            line = next(l for l in out.getvalue().splitlines() if "Sürüm etiketi" in l)
+            line = next(l for l in out.getvalue().splitlines() if "Release tag" in l)
             self.assertTrue(line.rstrip().endswith(expected), line)
 
     def test_version_comparison_is_numeric(self):

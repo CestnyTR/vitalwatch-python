@@ -59,11 +59,11 @@ class LineProcess(threading.Thread):
                 )
             except FileNotFoundError:
                 self.available = False
-                self._warn_once(f"{command[0]} bulunamadı; {self.source_name} kaynağı kapalı.")
+                self._warn_once(f"{command[0]} not found; {self.source_name} source disabled.")
                 return
             except OSError as error:
                 self.available = False
-                self._warn_once(f"{command[0]} çalıştırılamadı ({error}); {self.source_name} kaynağı kapalı.")
+                self._warn_once(f"{command[0]} could not be started ({error}); {self.source_name} source disabled.")
                 return
 
             self._process = process
@@ -77,7 +77,7 @@ class LineProcess(threading.Thread):
                     try:
                         self._on_line(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
                     except Exception as error:  # noqa: BLE001 — tek satır ajanı düşürmesin
-                        self._warn_once(f"{self.source_name} satırı işlenemedi: {error}")
+                        self._warn_once(f"could not process {self.source_name} line: {error}")
             except (OSError, ValueError):
                 pass
 
@@ -92,8 +92,8 @@ class LineProcess(threading.Thread):
             if self._stop_event.is_set():
                 return
 
-            detail = " ".join(errors).strip()[:300] or f"çıkış kodu {code}"
-            self._warn_once(f"{self.source_name} kaynağı durdu: {detail} — yeniden denenecek.")
+            detail = " ".join(errors).strip()[:300] or f"exit code {code}"
+            self._warn_once(f"{self.source_name} source stopped: {detail} — will retry.")
 
             if time.monotonic() - started >= HEALTHY_SECONDS:
                 delay = RESTART_DELAY

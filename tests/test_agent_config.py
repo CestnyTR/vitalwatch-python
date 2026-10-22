@@ -245,7 +245,7 @@ class AgentPipelineTest(unittest.TestCase):
 class CliTest(unittest.TestCase):
     def run_cli(self, argv, environ=None, rows=None):
         out, err = io.StringIO(), io.StringIO()
-        rows = rows if rows is not None else [("nginx", runner.FOUND, "1 dosya"), ("docker", runner.NOT_FOUND, "docker yok")]
+        rows = rows if rows is not None else [("nginx", runner.FOUND, "1 file"), ("docker", runner.NOT_FOUND, "docker not installed")]
         environ = environ if environ is not None else {
             "VITALWATCH_URL": "https://hub.example.com", "VITALWATCH_KEY": "vps", "VITALWATCH_SECRET": SECRET,
             config.CONFIG_ENV: "/nonexistent/agent.ini",
@@ -263,9 +263,9 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(0, code)
         self.assertIn("✓ nginx", out)
-        self.assertIn("bulunamadı", out)
+        self.assertIn("not found", out)
         self.assertIn("hub.example.com", out)
-        self.assertIn("Yapılandırma tamam", out)
+        self.assertIn("Configuration OK", out)
 
     def test_check_short_secret(self):
         code, _, err = self.run_cli(["check"], environ={
@@ -274,13 +274,13 @@ class CliTest(unittest.TestCase):
         })
 
         self.assertEqual(1, code)
-        self.assertIn("64 karakter olmalı, 63", err)
+        self.assertIn("must be 64 characters, got 63", err)
 
     def test_check_missing_config(self):
         code, _, err = self.run_cli(["check"], environ={config.CONFIG_ENV: "/nonexistent/agent.ini"})
 
         self.assertEqual(1, code)
-        self.assertIn("url, key, secret tanımlı değil", err)
+        self.assertIn("url, key, secret not set", err)
 
     def test_source_forced_on_but_missing_is_a_problem(self):
         code, _, err = self.run_cli(["check"], environ={
@@ -294,7 +294,7 @@ class CliTest(unittest.TestCase):
             code, _, err = self.run_cli(["check"], rows=[("docker", runner.NOT_FOUND, "")])
 
         self.assertEqual(1, code)
-        self.assertIn("docker kaynağı 'on'", err)
+        self.assertIn("docker source is 'on'", err)
 
     def test_check_test_event_accepted_by_hub(self):
         with FakeHub(SECRET) as hub:
@@ -314,12 +314,12 @@ class CliTest(unittest.TestCase):
             })
 
         self.assertEqual(0, code)
-        self.assertIn("Sınama olayı gönderildi (HTTP 204)", out)
+        self.assertIn("Test event sent (HTTP 204)", out)
         record = hub.requests[0]
         self.assertTrue(record["accepted"])
         self.assertEqual("agent", record["body"]["runtime"])
         self.assertEqual("log_error", record["body"]["events"][0]["kind"])
-        self.assertIn("sınama olayı", record["body"]["events"][0]["msg"])
+        self.assertIn("Test event", record["body"]["events"][0]["msg"])
 
     def test_check_test_unreachable_reports_failure(self):
         with mock.patch.object(cli, "hub_problems", return_value=[]):
@@ -329,7 +329,7 @@ class CliTest(unittest.TestCase):
             })
 
         self.assertEqual(1, code)
-        self.assertIn("GÖNDERİLEMEDİ", err)
+        self.assertIn("NOT SENT", err)
 
     def test_systemd_unit(self):
         code, out, _ = self.run_cli(["systemd"])
@@ -375,7 +375,7 @@ class CliTest(unittest.TestCase):
         code, _, err = self.run_cli(["run"], environ={config.CONFIG_ENV: "/nonexistent/agent.ini"})
 
         self.assertEqual(1, code)
-        self.assertIn("tanımlı değil", err)
+        self.assertIn("not set", err)
 
 
 class SourceReportTest(unittest.TestCase):

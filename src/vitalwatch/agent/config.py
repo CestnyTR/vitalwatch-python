@@ -147,9 +147,9 @@ def load(path=None, environ=None):
                 parser.read_file(handle)
             config.file_found = True
         except OSError as error:
-            config.errors.append(f"{config.path} okunamıyor: {error.strerror or error}")
+            config.errors.append(f"{config.path} is not readable: {error.strerror or error}")
         except (configparser.Error, UnicodeDecodeError) as error:
-            config.errors.append(f"{config.path} ayrıştırılamadı: {error}")
+            config.errors.append(f"{config.path} could not be parsed: {error}")
 
     _apply_hub(config, parser, environ)
     _apply_sources(config, parser)
@@ -181,7 +181,7 @@ def _apply_hub(config, parser, environ):
     try:
         config.timeout = float(hub.get("timeout") or 5.0)
     except ValueError:
-        config.errors.append("[hub] timeout sayı olmalı.")
+        config.errors.append("[hub] timeout must be a number.")
 
 
 def _apply_sources(config, parser):
@@ -195,7 +195,7 @@ def _apply_sources(config, parser):
             mode = _mode(section.get(name))
 
             if mode is None:
-                config.errors.append(f"[sources] {name} = {section.get(name)!r}: auto, on ya da off olmalı.")
+                config.errors.append(f"[sources] {name} = {section.get(name)!r}: must be auto, on or off.")
             else:
                 config.sources[name] = mode
 
@@ -206,7 +206,7 @@ def _apply_sources(config, parser):
 
     for name in section:
         if name not in known:
-            config.errors.append(f"[sources] {name}: bilinmeyen kaynak.")
+            config.errors.append(f"[sources] {name}: unknown source.")
 
 
 def _apply_disk(config, parser):
@@ -216,11 +216,11 @@ def _apply_disk(config, parser):
     try:
         threshold = int(parser["disk"].get("threshold", "90"))
     except ValueError:
-        config.errors.append("[disk] threshold tam sayı olmalı.")
+        config.errors.append("[disk] threshold must be an integer.")
         return
 
     if not 50 <= threshold <= 100:
-        config.errors.append("[disk] threshold 50 ile 100 arasında olmalı.")
+        config.errors.append("[disk] threshold must be between 50 and 100.")
         return
 
     config.disk_threshold = threshold
@@ -243,7 +243,7 @@ def _apply_ignore(config, parser):
         try:
             config.ignore_patterns.append(re.compile(text))
         except re.error as error:
-            config.errors.append(f"[ignore] patterns {text!r}: geçersiz düzenli ifade ({error}).")
+            config.errors.append(f"[ignore] patterns {text!r}: invalid regular expression ({error}).")
 
 
 def _apply_custom_logs(config, parser):
@@ -258,17 +258,17 @@ def _apply_custom_logs(config, parser):
         kind = (section.get("kind") or "log_error").strip()
 
         if not path or not pattern:
-            config.errors.append(f"[{section_name}] path ve pattern zorunlu.")
+            config.errors.append(f"[{section_name}] path and pattern are required.")
             continue
 
         try:
             compiled = re.compile(pattern)
         except re.error as error:
-            config.errors.append(f"[{section_name}] pattern geçersiz ({error}).")
+            config.errors.append(f"[{section_name}] invalid pattern ({error}).")
             continue
 
         if kind not in AGENT_KINDS:
-            config.errors.append(f"[{section_name}] kind {kind!r} bilinmiyor; log_error kullanılacak.")
+            config.errors.append(f"[{section_name}] unknown kind {kind!r}; log_error will be used.")
             kind = "log_error"
 
         config.custom_logs.append({"name": name, "path": path, "pattern": compiled, "kind": kind})

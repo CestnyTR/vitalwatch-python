@@ -1,17 +1,17 @@
-"""vitalwatch — VitalWatch Hub için Python raporlayıcı.
+"""vitalwatch — Python reporter for VitalWatch Hub.
 
-Kapsamı bilinçli olarak dar: **sunucu tarafı.** Tarayıcı hataları hub'dan
-servis edilen ``t.js`` ile toplanır; o dosya pakete taşınmaz — hosted olması
-bir düzeltmenin dakikalar içinde tüm sitelere yayılmasını sağlıyor, paket
-olsaydı her düzeltme için bütün projelerin yeniden dağıtılması gerekirdi.
+The scope is deliberately narrow: **server side only.** Browser errors are
+collected by ``t.js``, served by the hub; that file is not shipped in this
+package — because it is hosted, a fix reaches every site within minutes,
+whereas a packaged copy would require redeploying every project.
 
-Tipik kurulum (Flask)::
+Typical setup (Flask)::
 
     from vitalwatch.flask import VitalWatchFlask
 
     VitalWatchFlask(app)
 
-Tipik kurulum (çerçevesiz)::
+Typical setup (no framework)::
 
     import vitalwatch
 
@@ -52,14 +52,14 @@ _lock = threading.RLock()
 
 
 def from_environment(detect_release=True):
-    """Ortam değişkenlerinden yapılandırma.
+    """Build the configuration from environment variables.
 
-    İsimler kardeş paketlerle (Laravel, Node) birebir aynı: aynı projeyi iki
-    dilde izleyen ekip iki ayrı isim seti öğrenmek zorunda kalmasın.
+    The names are identical to the sibling packages (Laravel, Node), so a team
+    monitoring the same project in two languages learns one set of names.
 
-    ``release`` boşsa kendiliğinden bulunur (bkz. ``vitalwatch.release``):
-    ``VITALWATCH_RELEASE`` → CI/PaaS commit değişkenleri → çalışma dizinindeki
-    ``.git``. Kurulumda bir kez çözülür, olay başına değil.
+    If ``release`` is empty it is detected automatically (see
+    ``vitalwatch.release``): ``VITALWATCH_RELEASE`` → CI/PaaS commit variables →
+    ``.git`` in the working directory. It is resolved once at setup, not per event.
     """
     values = read_env()
     release = detect_release_label(values=values)[0] if detect_release else None
@@ -77,10 +77,11 @@ def from_environment(detect_release=True):
 
 
 def init(**options):
-    """Raporlayıcıyı kurar.
+    """Set up the reporter.
 
-    Çağrılmazsa ilk kullanımda ortam değişkenlerinden kendiliğinden kurulur —
-    kurulum adımını unutmak sessiz arıza üretmesin.
+    If it is never called, the reporter is set up from environment variables
+    on first use — forgetting the setup step must not cause a silent failure.
+    Keyword arguments override the environment.
     """
     global _instance
 
@@ -107,6 +108,7 @@ def init(**options):
 
 
 def reporter():
+    """Return the active reporter, setting it up from the environment if needed."""
     global _instance
 
     with _lock:
@@ -117,7 +119,7 @@ def reporter():
 
 
 def report(error, kind=None, route=None, method=None, block=False):
-    """Bir hatayı hub'a bildirir. Hiçbir koşulda hata fırlatmaz."""
+    """Report an exception to the hub. Never raises."""
     try:
         return reporter().record_exception(
             error, kind=kind, route=route, method=method, block=block
@@ -128,15 +130,16 @@ def report(error, kind=None, route=None, method=None, block=False):
 
 
 def hook_process():
-    """Yakalanmamış istisnaları dinler ve canlılığı başlatır.
+    """Listen for uncaught exceptions and start the heartbeat.
 
-    Davranış **değiştirilmez**: mevcut hook zincirlenerek çağrılır, süreç
-    sonlandırılmaz, çıkış kodu değiştirilmez. Bir izleme paketinin süreç
-    yönetimine karışması, çözdüğü sorundan büyük bir sorundur.
+    Behaviour is **not changed**: the existing hook is chained and still
+    called, the process is not terminated and the exit code is not altered.
+    A monitoring package interfering with process management would be a
+    bigger problem than the one it solves.
 
-    Süreç başına **bir kez** kurulur; tekrar çağrı yalnızca canlılığı yeniden
-    dener. Kancalar raporlayıcıyı çağrı anında çözer: kurulumdan sonra
-    ``vitalwatch.init(...)`` çağrılırsa olaylar yeni örneğe gider.
+    Installed **once** per process; calling it again only retries the
+    heartbeat. The hooks resolve the reporter at call time: if
+    ``vitalwatch.init(...)`` is called afterwards, events go to the new instance.
     """
     global _hooks_installed
 
@@ -201,10 +204,10 @@ def _flush_at_exit():
 
 
 def start_heartbeat(interval=HEARTBEAT_SECONDS):
-    """Süreç boyunca düzenli "buradayım" gönderir.
+    """Send a periodic "I am alive" request for the lifetime of the process.
 
-    Süreç başlarken hemen bir istek atılır: deploy sonrası kurulum kendini
-    anında kanıtlar, sekiz saat beklemez.
+    The first request is sent immediately at startup, so a fresh deploy proves
+    itself right away instead of after eight hours.
     """
     global _heartbeat, _heartbeat_stop
 
@@ -243,6 +246,7 @@ def start_heartbeat(interval=HEARTBEAT_SECONDS):
 
 
 def stop_heartbeat():
+    """Stop the heartbeat started by ``start_heartbeat``."""
     global _heartbeat, _heartbeat_stop
 
     if _heartbeat_stop is not None:

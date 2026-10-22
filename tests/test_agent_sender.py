@@ -219,7 +219,7 @@ class DeliveryTest(unittest.TestCase):
         sender.flush()
         self.assertEqual(0, sender.pending())
         self.assertEqual(3, len(client.bodies[-1]["events"]))
-        self.assertIn("yeniden ulaşıldı", warnings[-1])
+        self.assertIn("reachable again", warnings[-1])
 
     def test_backoff_capped(self):
         clock = Clock()

@@ -42,7 +42,7 @@ class EnvironmentTest(unittest.TestCase):
             code = cli.main([])
 
         self.assertNotEqual(0, code)
-        self.assertIn("kabul edilmez", error.getvalue())
+        self.assertIn("is not accepted by the hub", error.getvalue())
 
 
 if __name__ == "__main__":

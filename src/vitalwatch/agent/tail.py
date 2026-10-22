@@ -81,7 +81,7 @@ class Tailer:
             if not os.access(path, os.R_OK):
                 if path not in self._warned:
                     self._warned.add(path)
-                    self._warn(f"{path} okunamıyor (izin yok), atlanıyor.")
+                    self._warn(f"{path} is not readable (permission denied), skipping.")
                 continue
 
             self._files[path] = {

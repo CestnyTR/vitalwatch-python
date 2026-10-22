@@ -61,7 +61,7 @@ class HubClient:
         try:
             body = self._encode(payload)
         except (TypeError, ValueError) as error:
-            return {"sent": False, "status": None, "error": f"govde-kodlanamadi: {error}"}
+            return {"sent": False, "status": None, "error": f"body-encode-failed: {error}"}
 
         if body is None:
             return {"sent": False, "status": None, "error": "body-too-large"}

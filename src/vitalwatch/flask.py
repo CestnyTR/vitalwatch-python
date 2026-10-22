@@ -1,6 +1,6 @@
-"""Flask entegrasyonu: yavaş istek, 5xx ve yakalanmamış istisna ölçümü.
+"""Flask integration: slow requests, 5xx responses and uncaught exceptions.
 
-Kullanım::
+Usage::
 
     from flask import Flask
     from vitalwatch.flask import VitalWatchFlask
@@ -8,19 +8,19 @@ Kullanım::
     app = Flask(__name__)
     VitalWatchFlask(app)
 
-Flask bu modülün **içinde** import edilir; paketin kendisi Flask'a bağımlı
-değildir ve Flask kurulu olmayan bir projede ``import vitalwatch`` çalışmaya devam
-eder.
+Flask is imported **inside** this module only; the package itself does not
+depend on Flask, and ``import vitalwatch`` keeps working in projects without it.
 
-Kancalar ``teardown_request`` ve ``after_request`` üzerine kurulur; ``blinker``
-sinyalleri kullanılmaz — sinyal bağımlılığı Flask sürümüne göre değişiyor ve
-bu paketin bağımlılık politikası sıfır.
+Hooks are installed on ``teardown_request`` and ``after_request``; ``blinker``
+signals are not used — signal support varies between Flask versions and this
+package has a zero-dependency policy.
 
-Ayrıca uygulamanın ``handle_user_exception`` / ``handle_exception`` yöntemleri
-sarılır (örnek düzeyinde, sınıfa dokunulmaz). Gerekçe: uygulama
-``@errorhandler(Exception)`` tanımlayınca Flask hatayı "işlenmiş" sayıyor,
-teardown ``error=None`` alıyor ve hata **kayboluyordu** — panele yalnızca
-stack'siz "HTTP 500" düşüyordu. Sarmalayıcı hatayı görür, dönüşü aynen iletir.
+The app's ``handle_user_exception`` / ``handle_exception`` methods are also
+wrapped (per instance; the class is not touched). Reason: when the app defines
+``@errorhandler(Exception)``, Flask treats the error as "handled", teardown
+receives ``error=None`` and the error used to be **lost** — only a stackless
+"HTTP 500" reached the panel. The wrapper sees the error and passes the return
+value through unchanged.
 """
 
 import time
@@ -36,13 +36,12 @@ _REPORTED = "_vitalwatch_reported"
 
 
 class VitalWatchFlask:
-    """Flask eklentisi.
+    """Flask extension.
 
-    :param app: Uygulama. Verilmezse sonradan ``init_app`` çağrılır.
-    :param hook_process_errors: Yakalanmamış istisna kancalarını ve canlılık
-        zamanlayıcısını da kurar. Varsayılan açık: kurulum reçetesinin tek
-        adımda bitmesi, canlılığın ayrıca hatırlanması gereken bir çağrı
-        olmamasından daha güvenli.
+    :param app: The application. If omitted, call ``init_app`` later.
+    :param hook_process_errors: Also install the uncaught-exception hooks and
+        the heartbeat timer. On by default: a one-step setup is safer than a
+        heartbeat call that has to be remembered separately.
     """
 
     def __init__(self, app=None, hook_process_errors=True):
@@ -52,11 +51,11 @@ class VitalWatchFlask:
             self.init_app(app)
 
     def init_app(self, app):
-        """Kancaları kurar. Hiçbir koşulda hata fırlatmaz; ikinci çağrı no-op.
+        """Install the hooks. Never raises; a second call is a no-op.
 
-        İki kez kurulum ``after_request``'i iki kez kaydediyor, her yavaş
-        istek ve ``abort(500)`` iki olay açıyordu; ``app.extensions`` üzerinde
-        işaret tutulur.
+        Installing twice used to register ``after_request`` twice, so every slow
+        request and ``abort(500)`` produced two events; a marker is kept in
+        ``app.extensions``.
         """
         try:
             extensions = getattr(app, "extensions", None)
@@ -176,11 +175,11 @@ class VitalWatchFlask:
 
 
 def route_pattern(request):
-    """Flask'ın eşleşen rota deseni (``/urun/<id>``), gerçek yol değil.
+    """Flask's matched route pattern (``/product/<id>``), not the actual path.
 
-    Hem gruplama çalışır — aynı rota tek parmak izinde toplanır — hem de yolda
-    kişisel veri taşınmaz. Desen yoksa (404) yola düşülür ve query string
-    atılır (M3).
+    This keeps grouping working — the same route collapses into one
+    fingerprint — and keeps personal data in the path from being sent. Without
+    a pattern (404) it falls back to the path with the query string removed (M3).
     """
     try:
         rule = request.url_rule.rule if request.url_rule is not None else None
