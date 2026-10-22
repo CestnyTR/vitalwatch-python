@@ -94,7 +94,10 @@ class ReporterTest(unittest.TestCase):
         else:
             self.assertIsInstance(body["memory_mb"], int)
             self.assertGreater(body["memory_mb"], 0)
-            self.assertEqual(memory_mb(), body["memory_mb"])
+            # Tepe bellek (ru_maxrss) yalnızca artar: olay gönderildikten sonra
+            # süreç büyümüş olabilir. Eşitlik beklemek CI'da 1 MB farkla
+            # düşüyordu (3.13'te 144 ≠ 143); doğru olan "sonrakinden büyük değil".
+            self.assertLessEqual(body["memory_mb"], memory_mb())
 
     def test_bellek_birimi_platforma_gore(self):
         # ru_maxrss Linux'ta KB, macOS'ta bayt.
