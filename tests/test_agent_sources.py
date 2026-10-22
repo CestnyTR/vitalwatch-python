@@ -232,6 +232,34 @@ class DiskTest(unittest.TestCase):
 
         self.assertEqual([], emitted)
 
+    def test_dedupe_survives_restart(self):
+        """Ajan yeniden başlayınca aynı saat içinde aynı disk olayı tekrarlanmaz."""
+        full = lambda _: stats(bfree=60, bavail=60)  # %94
+        root_only = lambda: "/dev/sda1 / ext4 rw 0 0\n"
+        clock = [10_000.0]
+        first = []
+
+        before = system.DiskChecker(first.append, statvfs=full, mounts_reader=root_only, clock=lambda: clock[0])
+        before.check()
+        self.assertEqual(1, len(first))
+
+        saved = json.loads(json.dumps(before.known()))  # durum dosyası tur atışı
+        clock[0] += 600
+
+        second = []
+        after = system.DiskChecker(second.append, statvfs=full, mounts_reader=root_only, clock=lambda: clock[0], known=saved)
+        after.check()
+        self.assertEqual([], second)
+
+        clock[0] += 3000
+        after.check()
+        self.assertEqual(1, len(second))
+
+    def test_corrupt_saved_entries_are_ignored(self):
+        checker = system.DiskChecker(lambda _: None, known={"bozuk": 1, "/|disk": "dün", "/|swap": 5.0, "/var|inodes": 7.0})
+
+        self.assertEqual({("/var", "inodes"): 7.0}, checker._last)
+
 
 class FailedUnitsTest(unittest.TestCase):
     def runner(self, *outputs):

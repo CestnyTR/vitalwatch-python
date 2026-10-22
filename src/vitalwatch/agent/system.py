@@ -78,13 +78,39 @@ def usage(stats):
 
 
 class DiskChecker:
-    def __init__(self, emit, threshold=90, statvfs=os.statvfs, mounts_reader=_read_mounts, clock=time.monotonic):
+    """Doluluk eşiğini aşan bağlama noktasını saatte en fazla bir kez bildirir.
+
+    Son bildirim zamanları durum dosyasına yazılıyor (``known()``). Bellekte
+    tutulduğunda ajanın her yeniden başlatılması — güncelleme, sunucu
+    açılışı, ``Restart=always`` — aynı saat içinde aynı olayı yeniden
+    gönderiyordu. Bu yüzden saat de duvar saati: ``monotonic`` süreç
+    başına sıfırlanır ve kaydedilen değer bir sonraki süreçte anlamsız olurdu.
+    """
+
+    def __init__(self, emit, threshold=90, statvfs=os.statvfs, mounts_reader=_read_mounts, clock=time.time, known=None):
         self.emit = emit
         self.threshold = threshold
         self.statvfs = statvfs
         self.mounts_reader = mounts_reader
         self.clock = clock
         self._last = {}
+
+        # Durum dosyası elle bozulmuş olabilir: tanınmayan kayıt sessizce atılır.
+        for key, value in (known or {}).items():
+            mount_point, _, kind = str(key).rpartition("|")
+
+            if mount_point and kind in ("disk", "inodes") and isinstance(value, (int, float)):
+                self._last[(mount_point, kind)] = float(value)
+
+    def known(self):
+        """Durum dosyası için: süresi dolmamış son bildirimler."""
+        now = self.clock()
+
+        return {
+            f"{mount_point}|{kind}": at
+            for (mount_point, kind), at in self._last.items()
+            if now - at < DISK_DEDUPE_SECONDS
+        }
 
     def check(self):
         try:

@@ -20,7 +20,7 @@ import traceback
 from . import scrubber
 from .client import HubClient
 
-SDK_VERSION = "0.2.0"
+SDK_VERSION = "0.2.1"
 
 #: Kuyruk derinliği. Hata fırtınasında bellek sınırı; hub'ın istek başına
 #: kabul ettiği 8 olayın epey üstünde, normal işleyişte hiç dolmaz.

@@ -121,7 +121,7 @@ class Agent:
             self.failed_units = FailedUnitsChecker(self.emit, known=state.get("failed_units"), warn=self.warn)
 
         if self.config.source_mode("disk") != "off":
-            self.disk = DiskChecker(self.emit, threshold=self.config.disk_threshold)
+            self.disk = DiskChecker(self.emit, threshold=self.config.disk_threshold, known=state.get("disk_alerts"))
 
         if self._enabled("journal", "journalctl"):
             self.journal = JournalWatcher(
@@ -152,6 +152,7 @@ class Agent:
             "files": self.tailer.state() if self.tailer else {},
             "journal_cursor": self.journal.cursor if self.journal else None,
             "failed_units": self.failed_units.known() if self.failed_units else [],
+            "disk_alerts": self.disk.known() if self.disk else {},
         }
 
     def save_state(self, force=False):

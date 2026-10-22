@@ -1,27 +1,37 @@
-# PyPI yayını — trusted publishing (OIDC), token yok.
+# Test + PyPI yayını — trusted publishing (OIDC), token yok.
 #
-# `v*` etiketi gönderildiğinde çalışır: testler geçerse paketi derler ve PyPI'ye
-# yükler. Yükleme `pypi` ortamında koşar; GitHub'da bu ortama onay kuralı
-# eklenirse yayın elle onaylanmadan çıkmaz.
+# Her push'ta testler desteklenen bütün Python sürümlerinde koşar. `v*` etiketi
+# gönderildiğinde testler geçerse paket derlenir ve PyPI'ye yüklenir. Yükleme
+# `pypi` ortamında koşar; GitHub'da bu ortama onay kuralı eklenirse yayın elle
+# onaylanmadan çıkmaz.
 name: publish
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+  pull_request:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # 24.04 sabit: `requires-python >= 3.9` sözü yalnızca 3.9'da koşan testle
+    # tutulabilir ve daha yeni imajlarda eski sürümler bulunmayabilir.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - run: pip install -e . pytest flask django fastapi starlette httpx
       - run: python -m pytest -q
 
   build:
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

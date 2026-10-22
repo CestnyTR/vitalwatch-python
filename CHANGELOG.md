@@ -5,6 +5,22 @@
 > değişkenleri `VITALWATCH_*`, imza başlıkları `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. Aşağıdaki geçmiş kayıtlar yeni adlarla yazılmıştır.
 
+## 0.2.1
+
+### Düzeltildi
+
+- **Ajan yeniden başlayınca disk olayı tekrarlanıyordu.** "Bağlama noktası başına
+  saatte bir" sınırı yalnızca bellekte ve süreç başına sıfırlanan bir saatle
+  tutuluyordu; güncelleme, sunucu açılışı ya da `Restart=always` aynı saat içinde
+  aynı `disk_full` olayını yeniden gönderiyordu. Son bildirim zamanları artık durum
+  dosyasında (`disk_alerts`) ve duvar saatiyle.
+
+### Değişti
+
+- Testler her push'ta Python 3.9–3.14'te koşuyor (önceden yalnızca etikette, 3.12).
+  `requires-python >= 3.9` sözü artık testle tutuluyor. Yayın yine yalnızca `v*`
+  etiketinde.
+
 ## 0.2.0
 
 ### Eklendi
