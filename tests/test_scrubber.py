@@ -92,5 +92,24 @@ class ScrubberTest(unittest.TestCase):
         ):
             self.assertEqual("x [token] y", scrubber.text(input, 500))
 
+    def test_plain_camel_case_identifiers_are_not_tokens(self):
+        # .NET yığın izlerindeki uzun sınıf/metot adları [token] oluyordu (22 Ekim 2026).
+        for input in (
+            "InvalidOperationException",
+            "HandleNonSuccessAndDebuggerNotification",
+            "System.InvalidOperationException: boom",
+        ):
+            self.assertEqual(input, scrubber.text(input, 500))
+
+    def test_camel_case_exception_keeps_masking_random_strings(self):
+        # Rakam, ardışık büyük harf ya da tümü büyük harf: eski kurala düşer.
+        for input in (
+            "x aB3dE5fG7hJ9kL1mN3pQ5rS7 y",
+            "x ABCDEFGHIJKLMNOPQRSTUVWXYZ y",
+            "x 5d41402abc4b2a76b9719d91 y",
+            "x abcDEfghIJklmnOPqrsTUvwxYZab y",
+        ):
+            self.assertEqual("x [token] y", scrubber.text(input, 500))
+
 if __name__ == "__main__":
     unittest.main()

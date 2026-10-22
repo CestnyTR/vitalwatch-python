@@ -5,6 +5,21 @@
 > değişkenleri `VITALWATCH_*`, imza başlıkları `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. Aşağıdaki geçmiş kayıtlar yeni adlarla yazılmıştır.
 
+## 0.2.2
+
+### Değişti
+
+- **Düz CamelCase adlar artık `[token]` olmuyor.** Uzun dizi maskesi (24+ karakter)
+  `InvalidOperationException`, `HandleNonSuccessAndDebuggerNotification` gibi sınıf
+  ve metot adlarını da jeton sanıyor, yığın izleri okunmaz oluyordu. Rakam, `-`/`_`
+  taşımayan ve `^[A-Za-z][a-z]+(?:[A-Z][a-z]+)+$` desenine tamamen uyan aday jeton
+  sayılmıyor. Gerçek jeton ve oturum kimlikleri neredeyse hep rakam taşır; rakamlı,
+  ardışık büyük harfli ya da tümü büyük harf diziler eskisi gibi maskelenir. Kural hub
+  ve öbür SDK'larla birebir aynı; sunucu ajanı da aynı `scrubber.text`'i kullanıyor.
+- **Parmak izi yan etkisi:** böyle bir ad içeren hata mesajları yükseltmeden sonra bir
+  kez yeni parmak izi altında toplanır; panelde yeni satır açılır ve bir kez "yeni
+  hata" uyarısı gelebilir.
+
 ## 0.2.1
 
 ### Düzeltildi

@@ -61,6 +61,14 @@ def _is_token(candidate):
 
     Tireyle birleşmiş kısa parçalar okunur addır: ``kampanya-gorseli-1726571234567``.
     """
+    # Düz CamelCase/camelCase ad jeton değildir: gerçek jeton ve oturum
+    # kimlikleri neredeyse hep rakam taşır; rakamsız, yan yana iki büyük
+    # harfi olmayan ve küçük harfle biten 24+ karakterlik rastgele dizinin
+    # olasılığı 1/10.000'in çok altında. .NET'in `InvalidOperationException`
+    # gibi adları maskeleniyor, yığın izleri okunmaz oluyordu.
+    if re.fullmatch(r"[A-Za-z][a-z]+(?:[A-Z][a-z]+)+", candidate):
+        return False
+
     if any(len(part) >= 16 for part in re.split(r"[-_]", candidate)):
         return True
 
