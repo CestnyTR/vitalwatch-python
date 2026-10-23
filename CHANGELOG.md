@@ -5,7 +5,7 @@
 > environment variables `VITALWATCH_*`, signature headers `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. The history below uses the new names.
 
-## Unreleased
+## 0.2.4
 
 ### Fixed
 
