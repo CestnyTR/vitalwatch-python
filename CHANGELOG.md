@@ -5,6 +5,27 @@
 > environment variables `VITALWATCH_*`, signature headers `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. The history below uses the new names.
 
+## 0.4.0
+
+### Added
+
+- **Dependency advisories.** The application SDK (not `vitalwatch-agent`) sends the
+  installed package list of the running interpreter (`importlib.metadata`) to the hub's
+  new `POST /api/i/{key}/deps` endpoint, signed like `/server` and carrying the same
+  identity fields (`env`, `source`, `release`, `runtime`, `runtime_version`,
+  `sdk_version`) plus a `dependencies` object (`v: 1`, `ecosystem: "PyPI"`,
+  `manifest: "installed-distributions"`, `hash`, `packages`). The hub matches it against
+  OSV.dev. Names are PEP 503 normalized and deduplicated; `pip`, `setuptools`, `wheel`,
+  `vitalwatch` and the Debian placeholder `pkg-resources` are left out; at most 5000
+  packages; a body over 500 KB is not sent (one stderr warning).
+- Sent from the heartbeat thread about 60 seconds after start, then every 24 hours and
+  whenever the list's hash changes (re-checked hourly). With gunicorn `--preload` only
+  the master process sends.
+- `VITALWATCH_DEPENDENCIES=false` turns it off.
+- `vitalwatch-status` shows a `Dependencies` line (`installed distributions · N packages`
+  or `disabled`); `vitalwatch-status --deps` sends the list immediately and prints the
+  HTTP status. `--test` and `--vitalwatch` do not send it.
+
 ## 0.3.0
 
 ### Added

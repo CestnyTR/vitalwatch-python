@@ -167,6 +167,7 @@ months and that silence is mistaken for "all good".
 ```bash
 vitalwatch-status --test         # a real test event — shows up as an error in the dashboard
 vitalwatch-status --vitalwatch   # heartbeat only — does not create an error in the dashboard
+vitalwatch-status --deps         # send the installed dependency list now
 ```
 
 `--test` is the right choice when verifying a single installation. **In an update loop
@@ -190,6 +191,7 @@ Example output:
   Environment        production
   Python             3.12.3
   Release tag        abc123def456 (source: .git)
+  Dependencies       installed distributions · 87 packages
 
   ✓ Configuration OK.
 
@@ -204,6 +206,9 @@ The command also shows:
   `abc123def456 (source: .git)`; the source is `VITALWATCH_RELEASE`, the name of a CI/PaaS
   variable, `.git` or `none` (the tag itself then reads `not set`). Details:
   [Release tag](#release-tag-release).
+- **`Dependencies`** — how many installed packages would be sent for
+  [dependency advisories](#dependency-advisories), or `disabled`. `--deps` sends the list
+  immediately and prints the HTTP status; `--test` and `--vitalwatch` never send it.
 - **`Latest version`** — the newest stable version on PyPI (`info.version`). If it is
   newer than the installed version, an `! Update available: pip install -U vitalwatch`
   line is printed; this is a warning and does not change the exit code. Without network
@@ -226,6 +231,7 @@ The command also shows:
 | `VITALWATCH_STATUS_OFFLINE` | — | When `1`/`true`/`yes`/`on`/`evet`, `vitalwatch-status` does not go online for the update check |
 | `VITALWATCH_TIMEOUT` | `2.0` | Send timeout in **seconds**. Values of 100 and above are treated as milliseconds — Node expects ms under the same name, so `2000` should not mean 2000 seconds. Invalid, zero/negative, NaN or infinite → 2 s; the result is clamped to 0.1–10 s |
 | `VITALWATCH_SLOW_REQUEST_MS` | `1000` | Slow request threshold |
+| `VITALWATCH_DEPENDENCIES` | `true` | When `false` (`0`/`no`/`off`/`disabled`), the installed dependency list is not sent — see [Dependency advisories](#dependency-advisories) |
 
 Variables are read from `os.environ` and from the `.env` / `.env.local` / `.env.<APP_ENV>`
 files; the process environment always wins. Only keys prefixed with `VITALWATCH_` are
@@ -271,6 +277,62 @@ running `vitalwatch-status` from the same directory shows this as `(source: none
 
 Successful, fast requests are **not reported**: sending every request would burden both
 the monitored application and the hub.
+
+---
+
+## Dependency advisories
+
+The hub checks your project's installed packages against [OSV.dev](https://osv.dev) and
+alerts you when a known vulnerability affects a version you run. For that, the SDK sends
+the list of installed packages — names and versions only — to
+`POST {VITALWATCH_URL}/api/i/{key}/deps`, signed like every other request.
+
+- **Source:** the distributions installed in the running interpreter
+  (`importlib.metadata.distributions()`), not a lock file — it is what actually runs,
+  including transitive dependencies. Names are normalized per PEP 503 (`zope.interface`
+  → `zope-interface`), duplicates are removed (the copy Python imports wins), at most
+  5000 packages are sent.
+- **Not sent:** `pip`, `setuptools` and `wheel` — packaging tooling present in every
+  virtualenv, often in an old bundled version, and not imported by your application.
+  Their advisories concern install time; including them would raise the same unrelated
+  alert on every project. Also skipped: `vitalwatch` itself (its version is already
+  sent as `sdk_version`) and Debian/Ubuntu's placeholder `pkg-resources==0.0.0`.
+- **When:** from the heartbeat thread (`hook_process()`, `VitalWatchFlask`, the Django
+  and ASGI middleware start it) — first about 60 seconds after start, so short-lived
+  scripts never send it, then every 24 hours. The list is re-read locally every hour and
+  sent again as soon as it changes. A failed send is retried at the next hourly check.
+  Never on the request path.
+- **Forking servers:** only the process that started the heartbeat thread sends. With
+  gunicorn `--preload` that is the master process — one list per server, not one per
+  worker. Without `--preload`, each worker sets itself up and sends its own list (the
+  same as the heartbeat); the hub deduplicates by hash.
+- **Size:** if the request body would exceed 500 KB, nothing is sent and a single
+  warning is printed to stderr.
+- **Opt out:** `VITALWATCH_DEPENDENCIES=false`. Nothing is sent while
+  `VITALWATCH_ENABLED=false` either.
+
+Request body (trimmed):
+
+```json
+{
+  "env": "production",
+  "source": "server",
+  "release": "abc123def456",
+  "runtime": "python",
+  "runtime_version": "3.12.3",
+  "sdk_version": "0.4.0",
+  "dependencies": {
+    "v": 1,
+    "ecosystem": "PyPI",
+    "manifest": "installed-distributions",
+    "hash": "<sha256 of \"name@version\\n\" lines, sorted>",
+    "packages": [{"name": "flask", "version": "3.0.3"}, {"name": "werkzeug", "version": "3.0.6"}]
+  }
+}
+```
+
+`vitalwatch-status` shows the package count on the `Dependencies` line;
+`vitalwatch-status --deps` sends the list immediately.
 
 ---
 

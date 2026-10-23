@@ -13,6 +13,8 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 MAX_BODY_BYTES = 8192
+#: /deps ucunun sınırı (hub: 512 KB).
+MAX_DEPENDENCIES_BODY_BYTES = 512 * 1024
 MAX_AGE_SECONDS = 300
 
 
@@ -47,7 +49,7 @@ class FakeHub:
                 record = {
                     "path": self.path,
                     "raw": raw,
-                    "accepted": hub._accepts(self.headers, raw),
+                    "accepted": hub._accepts(self.headers, raw, self.path),
                     "body": None,
                 }
 
@@ -67,7 +69,7 @@ class FakeHub:
 
         return Handler
 
-    def _accepts(self, headers, raw):
+    def _accepts(self, headers, raw, path=""):
         """vitalwatch-hub VerifyProjectSignature + IngestController sınırları."""
         signature = headers.get("X-VitalWatch-Signature")
         timestamp = headers.get("X-VitalWatch-Timestamp")
@@ -78,7 +80,9 @@ class FakeHub:
         if abs(int(time.time()) - int(timestamp)) > MAX_AGE_SECONDS:
             return False
 
-        if len(raw) > MAX_BODY_BYTES:
+        limit = MAX_DEPENDENCIES_BODY_BYTES if path.endswith("/deps") else MAX_BODY_BYTES
+
+        if len(raw) > limit:
             return False
 
         expected = "sha256=" + hmac.new(

@@ -17,6 +17,9 @@ import urllib.request
 #: Aşan istek **okunmadan atılır** ve yine 204 döner — yani sessizce kaybolur.
 MAX_BODY_BYTES = 8192
 
+#: ``/deps`` gövde sınırı. Hub 512 KB kabul ediyor; 500 KB üstü hiç gönderilmez.
+DEPENDENCIES_MAX_BODY_BYTES = 500 * 1024
+
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """Yönlendirme takip edilmez: imzalı gövdeyi bilinmeyen bir adrese
@@ -66,6 +69,35 @@ class HubClient:
         if body is None:
             return {"sent": False, "status": None, "error": "body-too-large"}
 
+        return self._post(body, "server")
+
+    def send_dependencies(self, payload, max_bytes=None):
+        """Bağımlılık listesini ``/deps`` ucuna gönderir; ``send`` gibi asla fırlatmaz.
+
+        ``/server``'ın 8 KB kırpma mantığı burada yok: liste kırpılmaz, sınırı
+        (500 KB) aşarsa hiç gönderilmez — yarım liste "bu paketler kurulu
+        değil" demek olurdu. Sonuçta ``size`` (bayt) da döner.
+        """
+        limit = DEPENDENCIES_MAX_BODY_BYTES if max_bytes is None else max_bytes
+
+        if not self.configured():
+            return {"sent": False, "status": None, "error": "missing-config"}
+
+        try:
+            body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError) as error:
+            return {"sent": False, "status": None, "error": f"body-encode-failed: {error}"}
+
+        if len(body) > limit:
+            return {"sent": False, "status": None, "error": "body-too-large", "size": len(body)}
+
+        result = self._post(body, "deps")
+        result["size"] = len(body)
+
+        return result
+
+    def _post(self, body, endpoint):
+        """İmzalı POST; ``endpoint`` ``server`` ya da ``deps``. Asla fırlatmaz."""
         timestamp = str(int(time.time()))
 
         # Zaman damgası imzaya dahildir; olmasaydı saldırgan damgayı değiştirip
@@ -77,7 +109,7 @@ class HubClient:
         ).hexdigest()
 
         request = urllib.request.Request(
-            f"{self.url.rstrip('/')}/api/i/{urllib.parse.quote(self.key, safe='')}/server",
+            f"{self.url.rstrip('/')}/api/i/{urllib.parse.quote(self.key, safe='')}/{endpoint}",
             data=body,
             method="POST",
             headers={

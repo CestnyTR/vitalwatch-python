@@ -171,5 +171,90 @@ class StatusTest(unittest.TestCase):
         self.assertEqual((1, 2, 3), cli._stable(" V1.2.3 "))
 
 
+class DependenciesStatusTest(unittest.TestCase):
+    """``Dependencies`` satırı ve ``--deps``; ``--test`` bağımlılık göndermez."""
+
+    def run_cli(self, argv, config=None, current=None, collect=None):
+        out, err = io.StringIO(), io.StringIO()
+        current = current or mock.Mock()
+        collect = collect or mock.Mock(return_value=[{"name": "flask", "version": "3.0.3"}] * 87)
+
+        with mock.patch.dict(os.environ, {"VITALWATCH_STATUS_OFFLINE": "1"}), \
+                mock.patch.object(cli, "read_env", return_value=dict(CONFIG if config is None else config)), \
+                mock.patch.object(cli, "detect_release", return_value=(None, None)), \
+                mock.patch.object(cli, "init"), \
+                mock.patch.object(cli, "reporter", return_value=current), \
+                mock.patch.object(cli, "report", return_value={"sent": True, "status": 204, "error": None}), \
+                mock.patch.object(cli.dependencies, "collect", collect), \
+                redirect_stdout(out), redirect_stderr(err):
+            code = cli.main(argv)
+
+        return code, out.getvalue(), err.getvalue(), current
+
+    @staticmethod
+    def line(out):
+        return next(l for l in out.splitlines() if "Dependencies" in l and "sent" not in l)
+
+    def test_line_counts_packages(self):
+        code, out, _, current = self.run_cli([])
+
+        self.assertEqual(0, code)
+        self.assertTrue(self.line(out).rstrip().endswith("installed distributions · 87 packages"), out)
+        current.send_dependencies.assert_not_called()
+
+    def test_line_disabled(self):
+        collect = mock.Mock(side_effect=AssertionError("toplanmamalı"))
+
+        for extra in ({"VITALWATCH_DEPENDENCIES": "false"}, {"VITALWATCH_ENABLED": "false"}):
+            _, out, _, _ = self.run_cli([], config=dict(CONFIG, **extra), collect=collect)
+
+            self.assertTrue(self.line(out).rstrip().endswith("disabled"), extra)
+
+    def test_deps_sends_and_prints_status(self):
+        current = mock.Mock()
+        current.send_dependencies.return_value = {"sent": True, "status": 204, "error": None}
+
+        code, out, _, _ = self.run_cli(["--deps"], current=current)
+
+        self.assertEqual(0, code)
+        current.send_dependencies.assert_called_once_with()
+        self.assertIn("Dependencies sent (HTTP 204).", out)
+
+    def test_deps_failure_exit_code(self):
+        current = mock.Mock()
+        current.send_dependencies.return_value = {"sent": False, "status": None, "error": "disabled"}
+
+        code, _, err, _ = self.run_cli(["--deps"], current=current)
+
+        self.assertEqual(1, code)
+        self.assertIn("Dependencies NOT SENT: disabled", err)
+
+    def test_test_and_heartbeat_flags_do_not_send_dependencies(self):
+        current = mock.Mock()
+        current.heartbeat.return_value = {"sent": True, "status": 204, "error": None}
+
+        code, _, _, _ = self.run_cli(["--test", "--vitalwatch"], current=current)
+
+        self.assertEqual(0, code)
+        current.send_dependencies.assert_not_called()
+
+    def test_deps_against_fake_hub(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from fake_hub import FakeHub
+        from vitalwatch.reporter import Reporter
+
+        secret = "a" * 64
+
+        with FakeHub(secret) as hub:
+            current = Reporter(url=hub.url, key="k", secret=secret, env="local")
+            code, out, _, _ = self.run_cli(["--deps"], current=current)
+
+        self.assertEqual(0, code)
+        self.assertIn("Dependencies sent (HTTP 204).", out)
+        self.assertEqual(["/api/i/k/deps"], [r["path"] for r in hub.requests])
+        self.assertTrue(hub.requests[0]["accepted"])
+        self.assertEqual("PyPI", hub.requests[0]["body"]["dependencies"]["ecosystem"])
+
+
 if __name__ == "__main__":
     unittest.main()

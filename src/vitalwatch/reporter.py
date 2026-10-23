@@ -18,10 +18,11 @@ import sys
 import threading
 import traceback
 
+from . import dependencies as dependency_list
 from . import scrubber
 from .client import HubClient
 
-SDK_VERSION = "0.3.0"
+SDK_VERSION = "0.4.0"
 
 #: Kuyruk derinliği. Hata fırtınasında bellek sınırı; hub'ın istek başına
 #: kabul ettiği 8 olayın epey üstünde, normal işleyişte hiç dolmaz.
@@ -89,6 +90,7 @@ class Reporter:
         timeout=2.0,
         slow_request_ms=1000,
         ignore=(),
+        dependencies=True,
     ):
         self.client = HubClient(url=url, key=key, secret=secret, timeout=timeout)
         self.enabled = enabled
@@ -97,6 +99,7 @@ class Reporter:
         self.source = "ssr" if source == "ssr" else "server"
         self.slow_request_ms = slow_request_ms
         self.ignore = tuple(ignore or ())
+        self.dependencies = bool(dependencies)
 
         # Tekilleştirme için ayrı bir koleksiyon YOK; işaret istisnanın
         # üzerine yazılır (bkz. _mark). Node paketi burada WeakSet kullanıyor
@@ -214,28 +217,69 @@ class Reporter:
 
         return self.send({"events": []}, block=block)
 
+    def wants_dependencies(self):
+        """Whether the installed dependency list may be sent (configured and not disabled)."""
+        try:
+            return self.configured() and self.dependencies
+        except Exception:  # noqa: BLE001
+            return False
+
+    def send_dependencies(self, packages=None):
+        """Send the installed dependency list to the hub's ``/deps`` endpoint.
+
+        **Blocks** (short timeout): it is called from the heartbeat thread and
+        from ``vitalwatch-status --deps``, never on the request path. If the
+        body would exceed 500 KB nothing is sent and a warning is printed once.
+        Never raises.
+
+        :rtype: dict — ``{"sent": bool, "status": int|None, "error": str|None}``
+        """
+        try:
+            if not self.configured():
+                return {"sent": False, "status": None, "error": "missing-config"}
+
+            if not self.dependencies:
+                return {"sent": False, "status": None, "error": "disabled"}
+
+            if packages is None:
+                packages = dependency_list.collect()
+
+            body = self._identity()
+            body["dependencies"] = dependency_list.manifest(packages)
+
+            result = self.client.send_dependencies(body)
+
+            if result.get("error") == "body-too-large":
+                dependency_list.warn_too_large(result.get("size"))
+
+            return result
+        except Exception as error:  # noqa: BLE001
+            return {"sent": False, "status": None, "error": str(error)}
+
     # ------------------------------------------------------------------ #
     # Gönderim
     # ------------------------------------------------------------------ #
 
+    def _identity(self):
+        """Her gövdeye eklenen ortak alanlar (``/server`` ve ``/deps`` aynı)."""
+        body = {
+            "env": self.env,
+            "source": self.source,
+            "release": self.release,
+            # Çalışma ortamı ve SDK sürümü. Hub bunları bağlamda saklıyor;
+            # sdk_version olmadan hangi projenin eski sürümde kaldığı
+            # görülemez ve güncelleme körlemesine yapılır.
+            "runtime": "python",
+            "runtime_version": sys.version.split()[0],
+            "sdk_version": SDK_VERSION,
+        }
+
+        return {key: value for key, value in body.items() if value is not None}
+
     def send(self, event, block=False):
         """Add the common fields, then send the event or queue it."""
-        body = dict(event)
-        body.update(
-            {
-                "env": self.env,
-                "source": self.source,
-                "release": self.release,
-                # Çalışma ortamı ve SDK sürümü. Hub bunları bağlamda saklıyor;
-                # sdk_version olmadan hangi projenin eski sürümde kaldığı
-                # görülemez ve güncelleme körlemesine yapılır.
-                "runtime": "python",
-                "runtime_version": sys.version.split()[0],
-                "sdk_version": SDK_VERSION,
-            }
-        )
-
-        body = {key: value for key, value in body.items() if value is not None}
+        body = {key: value for key, value in dict(event).items() if value is not None}
+        body.update(self._identity())
 
         if block:
             return self.client.send(body)

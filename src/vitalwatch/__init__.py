@@ -24,8 +24,9 @@ import atexit
 import os
 import sys
 import threading
+import time
 
-from . import scrubber
+from . import dependencies, scrubber
 from .env import env as read_env
 from .release import detect as detect_release_label
 from .reporter import SDK_VERSION, Reporter
@@ -73,6 +74,7 @@ def from_environment(detect_release=True):
         "release": release,
         "timeout": _number(values.get("VITALWATCH_TIMEOUT"), 2.0),
         "slow_request_ms": _number(values.get("VITALWATCH_SLOW_REQUEST_MS"), 1000),
+        "dependencies": dependencies.enabled_in(values),
     }
 
 
@@ -208,11 +210,24 @@ def start_heartbeat(interval=HEARTBEAT_SECONDS):
 
     The first request is sent immediately at startup, so a fresh deploy proves
     itself right away instead of after eight hours.
+
+    The same background thread also sends the installed dependency list
+    (``vitalwatch.dependencies``): about 60 seconds after start, then every
+    24 hours and whenever the list changes. ``VITALWATCH_DEPENDENCIES=false``
+    turns that off.
+
+    Only the process that started the thread sends. After a fork (gunicorn
+    ``--preload``) the child inherits a stopped thread and does not start a
+    new one, so N workers do not mean N heartbeats or N dependency lists.
     """
     global _heartbeat, _heartbeat_stop
 
     with _lock:
         if _heartbeat is not None:
+            # Fork sonrası çocukta bu thread ölüdür ve bilerek yeniden
+            # başlatılmaz: gunicorn --preload'da ana süreç (arbiter) yaşamaya
+            # devam eder ve canlılığı + bağımlılık listesini o gönderir.
+            # Çocuklarda yeniden başlatmak N işçi × istek demek olurdu.
             return _heartbeat
 
         current = reporter()
@@ -225,24 +240,57 @@ def start_heartbeat(interval=HEARTBEAT_SECONDS):
         # Event tutulsaydı bir kez durdurulan zamanlayıcı bir daha çalışmazdı.
         stop = threading.Event()
         _heartbeat_stop = stop
-
-        def beat():
-            while not stop.wait(interval):
-                try:
-                    # Çağrı anında çözülür: sonradan init edilen örneğe gider.
-                    reporter().heartbeat(block=True)
-                except Exception:  # noqa: BLE001
-                    pass
+        schedule = dependencies.Schedule(time.monotonic())
 
         # İlk istek kuyruktan gider ki kurulum anında bloke olmasın.
         current.heartbeat(block=False)
 
         # daemon: kısa ömürlü bir betik işini bitirince kapanmalı; izleme
         # zamanlayıcısı onu sekiz saat ayakta tutarsa CLI komutları dönmez.
-        _heartbeat = threading.Thread(target=beat, name="heartbeat", daemon=True)
+        _heartbeat = threading.Thread(
+            target=_timer_loop, args=(stop, interval, schedule), name="heartbeat", daemon=True
+        )
         _heartbeat.start()
 
     return _heartbeat
+
+
+def _timer_loop(stop, interval, schedule, clock=time.monotonic):
+    """Canlılık thread'inin döngüsü: canlılık + bağımlılık zamanlaması.
+
+    Saat ve durdurma bayrağı parametre: testler sahte saatle (``stop.wait``
+    saati ilerletir) 24 saati milisaniyede koşturur. Raporlayıcı her turda
+    çağrı anında çözülür — sonradan init edilen örneğe gider.
+    """
+    next_beat = clock() + interval
+
+    while True:
+        try:
+            deadline = min(next_beat, schedule.next_check) if schedule is not None else next_beat
+            wait = max(deadline - clock(), 0)
+        except Exception:  # noqa: BLE001
+            wait = interval
+
+        if stop.wait(wait):
+            return
+
+        now = clock()
+
+        if now >= next_beat:
+            try:
+                reporter().heartbeat(block=True)
+            except Exception:  # noqa: BLE001
+                pass
+
+            next_beat = clock() + interval
+
+        if schedule is not None and schedule.due(now):
+            try:
+                schedule.run(now, reporter())
+            except Exception:  # noqa: BLE001
+                # run() zaten fırlatmaz; reporter() kurulumda patlarsa bile
+                # thread ölmesin ve meşgul döngüye girmesin.
+                schedule.next_check = now + schedule.check_every
 
 
 def stop_heartbeat():
@@ -266,6 +314,7 @@ def _number(value, fallback):
 __all__ = [
     "Reporter",
     "SDK_VERSION",
+    "dependencies",
     "__version__",
     "from_environment",
     "hook_process",

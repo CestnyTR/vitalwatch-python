@@ -16,7 +16,7 @@ import re
 import sys
 import urllib.request
 
-from . import __version__, init, report, reporter
+from . import __version__, dependencies, init, report, reporter
 from .env import env as read_env
 from .release import detect as detect_release
 from .reporter import ENVIRONMENTS, normalize_env
@@ -60,6 +60,7 @@ def main(argv=None):
     _line("Python", sys.version.split()[0])
     release, source = detect_release(values=values)
     _line("Release tag", f"{release or 'not set'} (source: {source or 'none'})")
+    _line("Dependencies", _dependencies_label(values))
     print("")
 
     problems = []
@@ -116,6 +117,12 @@ def main(argv=None):
         if not _report_result("Heartbeat", reporter().heartbeat(block=True)):
             return 1
 
+    # --deps: bağımlılık listesini hemen gönderir (normalde açılıştan ~60 sn
+    # sonra canlılık thread'i gönderir). --test ve --vitalwatch göndermez.
+    if "--deps" in argv:
+        if not _report_result("Dependencies", reporter().send_dependencies()):
+            return 1
+
     print("")
     print("  Only the hub panel can confirm that data arrives:")
     print('  the project row should show the connection status "Connected".')
@@ -123,6 +130,19 @@ def main(argv=None):
     print("")
 
     return 0
+
+
+def _dependencies_label(values):
+    """``installed distributions · 87 packages`` ya da ``disabled``. Ağa çıkmaz."""
+    if values.get("VITALWATCH_ENABLED") == "false" or not dependencies.enabled_in(values):
+        return "disabled"
+
+    try:
+        count = len(dependencies.collect())
+    except Exception:  # noqa: BLE001
+        return "not readable"
+
+    return f"installed distributions · {count} packages"
 
 
 def _update_lines(values):
