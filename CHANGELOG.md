@@ -5,6 +5,14 @@
 > environment variables `VITALWATCH_*`, signature headers `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. The history below uses the new names.
 
+## Unreleased
+
+### Fixed
+
+- Agent: PHP-FPM on Plesk (Ubuntu/Debian) was reported as `not found`. Plesk writes the
+  master log to `/var/log/plesk-phpXY-fpm/error.log`, which is now watched as part of the
+  `php_fpm` source.
+
 ## 0.2.3
 
 ### Changed

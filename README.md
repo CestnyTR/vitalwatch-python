@@ -376,7 +376,7 @@ stderr and keeps running.
 | Type | Source | Example |
 |---|---|---|
 | `web_server` | `/var/log/nginx/*error*.log`, `/var/log/apache2/*error*.log`, `/var/log/httpd/*error*`, Plesk `/var/www/vhosts/system/*/logs/{error_log,proxy_error_log}` | `[example.com] upstream timed out … while reading response header from upstream` (+ `route: GET /api/x`, `status: 504`) |
-| `php_fpm` | `/var/log/php*-fpm.log`, `/var/log/php-fpm/*.log`, `/opt/plesk/php/*/var/log/php-fpm.log` | `[pool www] server reached pm.max_children setting (5), consider raising it` |
+| `php_fpm` | `/var/log/php*-fpm.log`, `/var/log/php-fpm/*.log`, `/opt/plesk/php/*/var/log/php-fpm.log`, `/var/log/plesk-php*-fpm/error.log` | `[pool www] server reached pm.max_children setting (5), consider raising it` |
 | `database` | `/var/log/postgresql/*.log`, `/var/log/mysql/error.log`, `/var/log/mariadb/*.log`, `/var/log/mysqld.log`, `/var/log/mongodb/mongod.log`, `/var/log/redis/*.log` | `FATAL: remaining connection slots are reserved …` |
 | `service_failed` | journald + `systemctl --failed` every 5 minutes | `php8.4-fpm.service: Failed with result 'exit-code'` |
 | `container_failed` | `docker events` | `api: exited with code 137`, `api: restart loop (3 in 10 min)`, `api: unhealthy`, `api: killed by OOM` |

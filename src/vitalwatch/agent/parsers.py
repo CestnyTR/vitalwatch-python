@@ -388,6 +388,8 @@ FILE_SOURCES = [
             ("/var/log/php*-fpm.log", parse_php_fpm),
             ("/var/log/php-fpm/*.log", parse_php_fpm),
             ("/opt/plesk/php/*/var/log/php-fpm.log", parse_php_fpm),
+            # Plesk (Ubuntu/Debian) ana süreç günlüğünü burada tutuyor; yukarıdaki yol boş kalıyor.
+            ("/var/log/plesk-php*-fpm/error.log", parse_php_fpm),
         ],
     ),
     ("postgresql", [("/var/log/postgresql/*.log", parse_postgresql)]),

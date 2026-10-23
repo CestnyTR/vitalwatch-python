@@ -1,5 +1,6 @@
 """Ajan: log biçimi ayrıştırıcıları ve maskeleme (gerçek biçimli örnek satırlar)."""
 
+import fnmatch
 import re
 import sys
 import unittest
@@ -163,6 +164,13 @@ class PhpFpmTest(unittest.TestCase):
     def test_noise_skipped(self):
         for line in (F.FPM_NOTICE, F.FPM_EXITED_OK, F.FPM_STDERR):
             self.assertIsNone(parsers.parse_php_fpm(line, self.FILE), line)
+
+    def test_plesk_log_path_is_watched(self):
+        # Plesk'in PHP-FPM günlüğü /var/log/plesk-phpXY-fpm/error.log; döndürülmüş kopyalar değil.
+        globs = [g for name, pairs in parsers.FILE_SOURCES if name == "php_fpm" for g, _ in pairs]
+
+        self.assertTrue(any(fnmatch.fnmatch("/var/log/plesk-php84-fpm/error.log", g) for g in globs))
+        self.assertFalse(any(fnmatch.fnmatch("/var/log/plesk-php84-fpm/error.log.1", g) for g in globs))
 
 
 class DatabaseTest(unittest.TestCase):
