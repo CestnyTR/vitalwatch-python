@@ -5,6 +5,24 @@
 > environment variables `VITALWATCH_*`, signature headers `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. The history below uses the new names.
 
+## 0.3.0
+
+### Added
+
+- Agent: **server status snapshot.** Every 5 minutes (and once right after start) the
+  agent sends a single latest snapshot to the hub's server endpoint as a top-level
+  `server_status` field in an otherwise empty body (`{"events": [], "server_status": …}`):
+  short hostname, uptime, load average, CPU count, memory and swap, disk usage per real
+  filesystem, failed systemd units, Docker containers (state, health, restart count, start
+  time) and pending apt updates (counted at most once an hour) with the reboot-required
+  flag. The hub uses it for the daily digest and the `/server` command. It is a snapshot,
+  not a time series; no IP addresses are included. Each field becomes `null` if it cannot
+  be collected; bodies over 7000 bytes are trimmed and marked `truncated`. A successful
+  snapshot also counts as the heartbeat.
+- Agent: `vitalwatch-agent status` collects one snapshot and prints it as JSON without
+  sending it. `vitalwatch-agent check` shows a `Status snapshot` line with the update
+  counting method (`apt-check`, `apt-get` or `not available`).
+
 ## 0.2.4
 
 ### Fixed

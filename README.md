@@ -363,11 +363,13 @@ state file is `/var/lib/vitalwatch-agent/state.json` (change it with
 | `vitalwatch-agent run` | Runs as a service. On SIGTERM it stops child processes, flushes the queue one last time and saves state |
 | `vitalwatch-agent check` | Lists each source as `found` / `not found` / `not readable` / `disabled`; validates the hub configuration (64-character secret, https, environment name) |
 | `vitalwatch-agent check --test` | Additionally sends a `log_error` test event and prints the HTTP status as is |
+| `vitalwatch-agent status` | Collects one server status snapshot and prints it as JSON; nothing is sent |
 | `vitalwatch-agent systemd` | Prints a hardened unit file: `root`, `ProtectSystem=strict`, `ReadWritePaths=/var/lib/vitalwatch-agent`, `NoNewPrivileges`, `ProtectHome`, `PrivateTmp`, `Restart=always` |
 
 The service runs as root because Plesk vhost logs and the Docker socket cannot be read
 otherwise. The agent writes nowhere except its state file; it runs `journalctl`,
-`systemctl --failed`, `docker events` and `docker logs` only to **read** from them. If
+`systemctl --failed`, `docker events`, `docker logs`, `docker ps`/`docker inspect` and
+`apt-check` (or `apt-get -s upgrade`) only to **read** from them. If
 `journalctl` or `docker` is missing or not permitted, it prints a single warning to
 stderr and keeps running.
 
@@ -402,6 +404,28 @@ stderr and keeps running.
   server, its own errors must not feed the agent, and the agent's sends must not trigger
   new errors.
 
+#### Status snapshot (every 5 minutes)
+
+Besides events, the agent sends one **server status snapshot** every 5 minutes (the first
+one right after start) for the hub's daily digest and `/server` report. The hub keeps only
+the latest one: it is a single snapshot, **not** a time series, and no graphs are drawn
+from it. A successful snapshot also counts as the heartbeat.
+
+| Field | Content |
+|---|---|
+| `hostname` | Short host name (up to the first dot) |
+| `uptime_s`, `load`, `cpus` | Uptime in seconds, 1/5/15-minute load average, CPU count |
+| `memory` | `total_mb`, `available_mb`, `swap_total_mb`, `swap_used_mb` |
+| `disks` | Per real filesystem (same filter as `disk_full`, max 10): `mount`, `used_pct`, `inodes_pct`, `free_gb` |
+| `failed_units` | `systemctl --failed` unit names (max 20); `null` without systemd |
+| `containers` | `docker ps -a` + `docker inspect` (max 30): `name`, `state`, `health`, `restarts`, `started_at`; `null` if Docker is missing, not permitted or `docker = off` |
+| `updates` | Debian/Ubuntu only: `pending`, `security`, `reboot_required`; counted with `apt-check` (or `apt-get -s upgrade`) at most once an hour; `null` elsewhere |
+
+A field that cannot be collected becomes `null`; the rest is still sent. If the body
+would exceed 7000 bytes, containers, then failed units, then disks are trimmed from the
+end and `"truncated": true` is added. Run `vitalwatch-agent status` to see exactly what
+is sent.
+
 ### Deliberately not collected
 
 - **IP addresses** — become `[ip]` on every line; nginx's `client:` field is removed
@@ -418,8 +442,9 @@ stderr and keeps running.
   and **mail logs** (recipient addresses) are never read. Even with
   `journal_errors = on`, sources such as `sshd`, `sudo`, `postfix` and `dovecot` are
   skipped.
-- No CPU/RAM/disk **graphs**, continuous metrics or process lists: just a single event
-  when a threshold is crossed.
+- No CPU/RAM/disk **graphs**, continuous metrics or process lists: a single event when a
+  threshold is crossed, plus the latest status snapshot (above) — the hub keeps no history
+  of it.
 
 ---
 

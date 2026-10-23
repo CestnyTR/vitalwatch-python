@@ -207,6 +207,8 @@ class AgentPipelineTest(unittest.TestCase):
             loaded.custom_logs = [{"name": "app", "path": log, "pattern": re.compile(r"\bERR\b"), "kind": "log_error"}]
             store = StateStore(os.path.join(self.directory, "state"))
             agent = runner.Agent(loaded, store=store, warn_func=lambda _: None)
+            # Gerçek alt süreç (docker, apt) çalışmasın.
+            agent.status_collector = mock.Mock(collect=lambda: {"v": 1, "collected_at": 1, "hostname": "test"})
 
             with mock.patch.object(runner, "POLL_INTERVAL", 0.05):
                 thread = threading.Thread(target=agent.run, kwargs={"install_signals": False})
@@ -237,6 +239,10 @@ class AgentPipelineTest(unittest.TestCase):
             [{"kind": "log_error", "msg": "ERR payment for [email] from [ip] failed /pay", "file": log}], events
         )
         self.assertTrue(any(r["body"]["events"] == [] for r in hub.requests), "açılış canlılık isteği")
+        self.assertTrue(
+            any((r["body"].get("server_status") or {}).get("hostname") == "test" for r in hub.requests),
+            "açılışta durum özeti",
+        )
 
         saved = store.load()
         self.assertEqual(os.path.getsize(log), saved["files"][log]["offset"], "kapanışta durum kaydedildi")

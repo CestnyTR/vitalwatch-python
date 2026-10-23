@@ -1,6 +1,7 @@
-"""``vitalwatch-agent run | check [--test] | systemd``."""
+"""``vitalwatch-agent run | check [--test] | status | systemd``."""
 
 import argparse
+import json
 import sys
 import threading
 
@@ -9,6 +10,7 @@ from ..reporter import ENVIRONMENTS, SDK_VERSION
 from . import config as config_module
 from .runner import DISABLED, FOUND, NOT_FOUND, Agent, source_report
 from .sender import identity
+from .status import STATUS_INTERVAL, collector_for
 
 #: Panelden gelen secret'in uzunluğu (``vitalwatch-status`` ile aynı kontrol).
 SECRET_LENGTH = 64
@@ -72,6 +74,8 @@ def command_check(config, send_test=False):
         if status != FOUND and config.source_mode(name) == "on":
             problems.append(f"{name} source is 'on' but {status}.")
 
+    method = collector_for(config).update_method()
+    _line("Status snapshot", f"every {int(STATUS_INTERVAL // 60)} min (updates: {method or 'not available'})")
     print("")
 
     if not config.enabled:
@@ -104,6 +108,14 @@ def command_check(config, send_test=False):
     print("  Only the hub panel can confirm that data arrives: the hub returns 204")
     print("  for an invalid signature too. The test event should appear as 'log_error'.")
     print("")
+
+    return 0
+
+
+def command_status(config):
+    """Tek bir durum özeti toplar ve JSON olarak yazar; gönderilmez."""
+    snapshot = collector_for(config).collect()
+    print(json.dumps(snapshot, indent=2, ensure_ascii=False))
 
     return 0
 
@@ -212,6 +224,7 @@ def build_parser():
     commands.add_parser("run", help="run as a service")
     check = commands.add_parser("check", help="check sources and configuration")
     check.add_argument("--test", action="store_true", help="send a test event to the hub")
+    commands.add_parser("status", help="collect one server status snapshot and print it as JSON (not sent)")
     commands.add_parser("systemd", help="print the systemd unit file")
 
     # Alt komuttan sonra da --config yazılabilsin: "vitalwatch-agent run --config x".
@@ -230,11 +243,14 @@ def main(argv=None):
         print(systemd_unit(config_path=config_module.resolve_path(config_path)), end="")
         return 0
 
-    if args.command not in ("run", "check"):
+    if args.command not in ("run", "check", "status"):
         parser.print_help()
         return 2
 
     config = config_module.load(config_path)
+
+    if args.command == "status":
+        return command_status(config)
 
     if args.command == "check":
         return command_check(config, send_test=args.test)
@@ -242,4 +258,4 @@ def main(argv=None):
     return command_run(config)
 
 
-__all__ = ["main", "systemd_unit", "hub_problems", "command_check", "NOT_FOUND"]
+__all__ = ["main", "systemd_unit", "hub_problems", "command_check", "command_status", "NOT_FOUND"]

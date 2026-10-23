@@ -7,7 +7,9 @@ Thread düzeni:
 - ``sender``: gönderim, geri çekilme, canlılık;
 - her alt süreç kaynağı (journald, docker events, her ``docker logs``) kendi
   thread'inde — biri beklerken diğerleri durmaz;
-- ``system``: ``systemctl --failed`` ve disk denetimi (5 dk).
+- ``system``: ``systemctl --failed`` ve disk denetimi (5 dk);
+- ``status``: sunucu durum özeti (5 dk, ilki açılışta) — toplar, ``sender``'a
+  bırakır; gönderim ``sender`` thread'inde.
 
 SIGTERM/SIGINT durdurma bayrağını kaldırır; ana thread alt süreçleri kapatır,
 kuyruğu bir kez daha göndermeyi dener ve durumu kaydeder.
@@ -29,6 +31,7 @@ from .parsers import FILE_SOURCES, make_custom_parser
 from .process import LineProcess, warn
 from .sender import Sender
 from .state import StateStore
+from .status import STATUS_INTERVAL, collector_for
 from .system import DiskChecker, FailedUnitsChecker, real_mounts, usage
 from .tail import Tailer, _skip_name
 
@@ -69,6 +72,8 @@ class Agent:
         self.disk = None
         self._processes = []
         self._system_thread = None
+        self._status_thread = None
+        self.status_collector = None
         self._last_saved = None
 
     # ------------------------------------------------------------------ #
@@ -179,6 +184,21 @@ class Agent:
 
             self.stop_event.wait(SYSTEM_INTERVAL)
 
+    def _status_loop(self):
+        # Neden ayrı thread: toplama apt (60 sn'ye kadar) ve docker inspect
+        # yüzünden saniyeler sürebilir. Ana döngüde log okumayı, sender
+        # thread'inde olay gönderimini bu kadar bekletirdi; system thread'inde
+        # de systemctl/disk denetimini geciktirirdi. Burada yalnızca toplanır;
+        # gönderim (imza, geri çekilme, canlılık sayımı) tek yerde — sender'da —
+        # kalır. Olay akışından bağımsız: her tur bekleyen özeti yenisiyle değiştirir.
+        while not self.stop_event.is_set():
+            try:
+                self.sender.set_status(self.status_collector.collect())
+            except Exception as error:  # noqa: BLE001 — collect fırlatmaz ama yine de
+                self.warn(f"server status error: {error}")
+
+            self.stop_event.wait(STATUS_INTERVAL)
+
     def poll_files(self):
         for path, line, parser in self.tailer.poll():
             self.handle_line(line, parser, path)
@@ -199,6 +219,11 @@ class Agent:
 
         self._system_thread = threading.Thread(target=self._system_loop, name="vitalwatch-agent-system", daemon=True)
         self._system_thread.start()
+
+        if self.sender.enabled:
+            self.status_collector = self.status_collector or collector_for(self.config)
+            self._status_thread = threading.Thread(target=self._status_loop, name="vitalwatch-agent-status", daemon=True)
+            self._status_thread.start()
 
         last_scan = last_save = time.monotonic()
 

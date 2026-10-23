@@ -1,7 +1,9 @@
 """Periyodik denetimler: ``systemctl --failed`` ve disk doluluğu.
 
-Bunlar **olay** düzeyindedir: eşik aşıldığında tek olay. CPU/RAM/disk grafiği,
-sürekli metrik ve süreç listesi kapsam dışıdır (sözleşme, "Kapsam kararı").
+Bunlar **olay** düzeyindedir: eşik aşıldığında tek olay. Ayrıca hub raporu
+(günlük özet, ``/server``) için 5 dk'da bir **tek, en son** durum özeti gönderilir
+(``status.py``); hub yalnızca sonuncuyu tutar. Zaman serisi, CPU/RAM/disk grafiği
+ve süreç listesi hâlâ kapsam dışıdır (sözleşme, "Kapsam kararı").
 """
 
 import math

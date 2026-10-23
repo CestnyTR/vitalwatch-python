@@ -13,6 +13,11 @@
 - Son başarılı istekten bu yana 5 dk geçtiyse boş bir canlılık isteği
   (``{"events": [], …}``) gider; hub'ın kurulum sağlığı ajanın susmasını
   bununla görür.
+- Sunucu durum özeti (``server_status``) 5 dk'da bir ayrı thread'de toplanır
+  (``runner``) ve ``set_status`` ile buraya bırakılır; bu thread onu
+  ``{"events": [], "server_status": …}`` gövdesiyle gönderir. Yalnızca en son
+  özet tutulur — hub erişilemezken birikmez. Başarılı gönderim canlılık da
+  sayılır.
 """
 
 import collections
@@ -23,6 +28,7 @@ import time
 
 from ..client import MAX_BODY_BYTES
 from ..reporter import SDK_VERSION
+from .status import status_body
 
 QUEUE_SIZE = 1000
 PER_MESSAGE_LIMIT = 20
@@ -114,6 +120,8 @@ class Sender:
         self._last_success = None
         self._outage_reported = False
         self.sent_events = 0
+        self._status = None
+        self.sent_status = 0
 
     # ------------------------------------------------------------------ #
     # Kabul
@@ -278,6 +286,43 @@ class Sender:
 
         return outcome
 
+    def set_status(self, snapshot):
+        """En son durum özetini bırakır (öncekinin yerine geçer) ve thread'i uyandırır."""
+        if not self.enabled or not snapshot:
+            return
+
+        with self._lock:
+            self._status = snapshot
+
+        self._wake.set()
+
+    def send_status(self):
+        """Bekleyen özeti gönderir. Geri çekilme süresindeyse bekletir."""
+        with self._lock:
+            snapshot = self._status
+
+        if snapshot is None or not self.enabled or self.clock() < self._next_attempt:
+            return None
+
+        outcome, reason = self._post(status_body(self.head, snapshot))
+
+        if outcome == "retry":
+            self._failed(self.clock(), reason)
+            return outcome
+
+        with self._lock:
+            # Gönderim sırasında yenisi geldiyse o kalır.
+            if self._status is snapshot:
+                self._status = None
+
+        if outcome == "ok":
+            self.sent_status += 1
+            self._succeeded(self.clock())
+        else:
+            self._warn(f"server status rejected by the hub ({reason}); discarded.")
+
+        return outcome
+
     def tick(self):
         """Arka plan döngüsünün bir adımı (testlerde doğrudan çağrılır)."""
         now = self.clock()
@@ -288,6 +333,8 @@ class Sender:
             self.flush()
         elif self._last_flush is None:
             self._last_flush = now
+
+        self.send_status()
 
         if self.heartbeat_due():
             self.heartbeat()
