@@ -5,6 +5,18 @@
 > environment variables `VITALWATCH_*`, signature headers `X-VitalWatch-Signature` /
 > `X-VitalWatch-Timestamp`. The history below uses the new names.
 
+
+## 0.4.1
+
+### Fixed
+
+- Agent: ModSecurity blocks (`ModSecurity: Access denied` / `Warning` in Apache and Plesk
+  `error_log`) were reported as `web_server` errors. They show the firewall working (bots
+  probing `/.env`, `/.git/`), not a fault; on a Plesk server they were most of the events.
+  They are now filtered as noise.
+- Agent: nginx 404 scans logged as `openat() … failed (2: No such file or directory)` (newer
+  nginx) were not recognised as noise like `open() …`; both forms are filtered now.
+
 ## 0.4.0
 
 ### Added

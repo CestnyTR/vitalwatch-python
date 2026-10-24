@@ -453,7 +453,7 @@ stderr and keeps running.
   Positions (inode + offset) and the journald cursor are kept in the state file; log
   rotation and truncation are detected. Globs are rescanned every minute, so a new site
   added in Plesk is picked up without a restart.
-- Noise is filtered out: `open() … failed` from 404s, TLS handshake errors, `[warn]`,
+- Noise is filtered out: `open()` / `openat() … failed` from 404s, ModSecurity blocks (`Access denied` — the firewall working, not a fault), TLS handshake errors, `[warn]`,
   PHP warnings (only `Fatal error` / `Parse error` get through), application-level SQL
   errors (that's the SDK's job), exit codes produced by `docker stop`.
 - At most 20 events per minute for the same message and 300 events per minute in total.

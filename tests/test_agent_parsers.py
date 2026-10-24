@@ -91,7 +91,7 @@ class NginxTest(unittest.TestCase):
         assert_clean(self, event)
 
     def test_noise_is_skipped(self):
-        for line in (F.NGINX_404_NOISE, F.NGINX_SSL_NOISE, F.NGINX_WARN, F.NGINX_PHP_WARNING):
+        for line in (F.NGINX_404_NOISE, F.NGINX_404_OPENAT_NOISE, F.NGINX_SSL_NOISE, F.NGINX_WARN, F.NGINX_PHP_WARNING):
             self.assertIsNone(parsers.parse_nginx(line, NGINX_LOG), line)
 
     def test_php_fatal_through_fastcgi(self):
@@ -123,6 +123,9 @@ class ApacheAndPleskTest(unittest.TestCase):
 
     def test_noise_and_notice_skipped(self):
         self.assertIsNone(parsers.parse_apache(F.APACHE_DENIED_NOISE, "/var/log/apache2/error.log"))
+        self.assertIsNone(parsers.parse_apache(F.APACHE_MODSECURITY_BLOCK, "/var/log/apache2/error.log"))
+        self.assertIsNone(parsers.parse_apache(F.APACHE_MODSECURITY_WARNING, "/var/log/apache2/error.log"))
+        self.assertIsNone(parsers.parse_plesk_error(F.APACHE_MODSECURITY_BLOCK, F.PLESK_ERROR_LOG))
         self.assertIsNone(parsers.parse_apache(F.APACHE_NOTICE, "/var/log/apache2/error.log"))
 
     def test_plesk_error_log_site_from_path(self):

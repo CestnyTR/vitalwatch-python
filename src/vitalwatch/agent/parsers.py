@@ -55,7 +55,8 @@ _NGINX_LEVELS = ("error", "crit", "alert", "emerg")
 
 #: Hata seviyesinde yazılan ama arıza olmayan satırlar.
 _NGINX_NOISE = re.compile(
-    r"open\(\) \".*\" failed \(2: No such file or directory\)"
+    # Yeni nginx sürümleri open() yerine openat() yazıyor; ikisi de 404 taraması.
+    r"open(?:at)?\(\) \".*\" failed \(2: No such file or directory\)"
     r"|failed \(13: Permission denied\).*\.(?:php|env|git)"
     r"|directory index of .* is forbidden"
     r"|access forbidden by rule"
@@ -131,6 +132,10 @@ _APACHE_NOISE = re.compile(
     r"AH01630|AH01797|AH01276|AH00128|AH01264|AH02032|AH01071: Got error 'Primary script unknown'"
     r"|client denied by server configuration|File does not exist|script not found or unable to stat"
     r"|Cannot serve directory|SSL Library Error|AH01964|AH02042|AH02261|AH01618|AH01617"
+    # ModSecurity'nin engellediği istek (/.env, /.git/ taraması, XSS deseni) bir arıza
+    # değil, korumanın ÇALIŞTIĞINI gösterir; Plesk sunucusunda günde yüzlerce satır.
+    # 24 Ekim 2026 ilk gün ölçümü: 155 olayın ~120'si buydu.
+    r"|ModSecurity: (?:Access denied|Warning)"
 )
 
 

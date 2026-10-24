@@ -22,7 +22,7 @@ from . import dependencies as dependency_list
 from . import scrubber
 from .client import HubClient
 
-SDK_VERSION = "0.4.0"
+SDK_VERSION = "0.4.1"
 
 #: Kuyruk derinliği. Hata fırtınasında bellek sınırı; hub'ın istek başına
 #: kabul ettiği 8 olayın epey üstünde, normal işleyişte hiç dolmaz.

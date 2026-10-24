@@ -200,3 +200,18 @@ def docker_event(action, name="api", exit_code=None, at=1_761_040_000, legacy=Tr
         event.update({"status": action, "id": "f00dfeed" * 8, "from": "registry.example.com/api:1"})
 
     return event
+
+# 24 Ekim 2026, canlı sunucudan (adresler örnek değerlerle değiştirildi)
+NGINX_404_OPENAT_NOISE = (
+    '2026/10/23 20:59:01 [error] 1234#1234: *9001 openat() "/var/www/vhosts/default/htdocs/.well-known/acme-challenge/222.php" '
+    'failed (2: No such file or directory), client: 203.0.113.11, server: , request: "GET /.well-known/acme-challenge/222.php HTTP/1.1", host: "example.com"'
+)
+APACHE_MODSECURITY_BLOCK = (
+    "[Thu Oct 23 18:42:00.000000 2026] [security2:error] [pid 2222:tid 2223] [client 203.0.113.12:40000] "
+    '[client 203.0.113.12] ModSecurity: Access denied with code 403 (phase 1). Matched phrase "/.env" at REQUEST_URI. '
+    '[file "/etc/apache2/modsecurity.d/rules/comodo_free/02_Global_Generic.conf"] [line "120"] [id "210492"]'
+)
+APACHE_MODSECURITY_WARNING = (
+    "[Thu Oct 23 18:43:00.000000 2026] [security2:error] [pid 2222:tid 2224] [client 203.0.113.13:40001] "
+    '[client 203.0.113.13] ModSecurity: Warning. Matched phrase "/.git/" at REQUEST_URI. [id "210492"]'
+)
