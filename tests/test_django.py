@@ -97,7 +97,11 @@ class DjangoTest(unittest.TestCase):
 
         vitalwatch._instance = None
         self.reporter = vitalwatch.init(
-            url=self.hub.url, key="project", secret=SECRET, slow_request_ms=100, timeout=2.0
+            url=self.hub.url, key="project", secret=SECRET,
+            # Bu dosyada yavaş istek denenmiyor; eşik düşük olunca yavaş CI makinesinde
+            # ilk istek (soğuk başlangıç) eşiği geçip olay listelerine sızıyordu
+            # (24 Ekim 2026, Python 3.14 koşusu: "GET /yasak/ — 120 ms").
+            slow_request_ms=60_000, timeout=2.0
         )
 
     def client(self):
